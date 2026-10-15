@@ -1,0 +1,217 @@
+================================================================================
+OWASP COMPREHENSIVE CHEAT SHEET: SQL INJECTION PREVENTION & REMEDIATION
+================================================================================
+Category: OWASP Top 10 A05:2025 - Injection
+Common Weakness Enumeration: CWE-89 (Improper Neutralization of Special Elements used in an SQL Command)
+Severity: Critical (CVSS 9.0 - 10.0)
+
+1. VULNERABILITY MECHANISM AND IMPACT
+SQL Injection occurs when untrusted user input directly controls or alters the logic of dynamic database queries executed by the backend application. An attacker submits syntactic characters (such as single quotes ', double dashes --, hash #, or UNION clauses) that escape data literal context and get interpreted as SQL instructions.
+
+Potential Business and Technical Impact:
+- Full database schema enumeration and complete exfiltration of sensitive records.
+- Unauthorized authentication bypass (e.g., admin login via `' OR 1=1 --`).
+- Modification, corruption, or irreversible dropping of tables.
+- Arbitrary operating system command execution via administrative procedures (e.g., MSSQL xp_cmdshell, MySQL LOAD_FILE / INTO OUTFILE, PostgreSQL COPY ... FROM PROGRAM).
+- Complete infrastructure and network compromise through database privilege escalation.
+
+2. PRIMARY DEFENSE: PARAMETERIZED QUERIES (PREPARED STATEMENTS)
+Parameterized queries compile the query structure first. User-provided values are subsequently bound strictly as parameter literals, making SQL execution logically impossible regardless of the characters supplied.
+
+A. Python Implementations:
+
+1) SQLite (sqlite3):
+   VULNERABLE (F-strings / String formatting):
+       cursor.execute(f"SELECT id, role FROM users WHERE username = '{username}' AND password = '{password}'")
+       cursor.execute("SELECT id, role FROM users WHERE username = '%s'" % username)
+   
+   SECURE (Positional Bind Variables):
+       cursor.execute("SELECT id, role FROM users WHERE username = ? AND password = ?", (username, password))
+
+2) PostgreSQL (psycopg2 / psycopg3):
+   VULNERABLE:
+       cursor.execute(f"SELECT balance FROM accounts WHERE user_id = '{user_id}'")
+   
+   SECURE:
+       cursor.execute("SELECT balance FROM accounts WHERE user_id = %s", (user_id,))
+
+3) MySQL (mysql-connector-python):
+   VULNERABLE:
+       cursor.execute("SELECT * FROM employees WHERE department = '" + dept + "'")
+   
+   SECURE:
+       cursor.execute("SELECT * FROM employees WHERE department = %s", (dept,))
+
+B. Java JDBC Implementations:
+
+1) Plain JDBC Statement (VULNERABLE):
+   Statement stmt = connection.createStatement();
+   String query = "SELECT account_number, balance FROM customer_accounts WHERE customer_id = '" + customerId + "'";
+   ResultSet rs = stmt.executeQuery(query); // High Risk of SQL Injection
+
+2) Prepared Statement (SECURE):
+   String query = "SELECT account_number, balance FROM customer_accounts WHERE customer_id = ? AND status = ?";
+   try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+       pstmt.setString(1, customerId);
+       pstmt.setString(2, "ACTIVE");
+       try (ResultSet rs = pstmt.executeQuery()) {
+           while (rs.next()) {
+               // Process result set safely
+           }
+       }
+   }
+
+3. OBJECT-RELATIONAL MAPPING (ORM) FRAMEWORKS
+Using an ORM mitigates SQL injection only when native ORM abstraction methods are used. Raw SQL calls inside ORMs remain vulnerable.
+
+Python ORMs:
+- Django ORM:
+  SECURE:
+      User.objects.filter(username=user_input, is_active=True)
+  VULNERABLE:
+      User.objects.raw(f"SELECT * FROM auth_user WHERE username = '{user_input}'")
+  SECURE RAW:
+      User.objects.raw("SELECT * FROM auth_user WHERE username = %s", [user_input])
+
+- SQLAlchemy:
+  SECURE:
+      session.query(User).filter(User.username == user_input).all()
+  SECURE RAW with bindparams:
+      from sqlalchemy import text
+      stmt = text("SELECT * FROM users WHERE email = :email").bindparams(email=user_input)
+      session.execute(stmt)
+
+Java ORMs:
+- Spring Data JPA / Hibernate:
+  SECURE (JPQL Named Parameters):
+      @Query("SELECT u FROM User u WHERE u.email = :email")
+      User findByEmail(@Param("email") String email);
+  VULNERABLE (JPQL String Concatenation):
+      EntityManager em = getEntityManager();
+      em.createQuery("SELECT u FROM User u WHERE u.email = '" + email + "'");
+
+4. HANDLING NON-PARAMETRIZABLE DYNAMIC ELEMENTS
+Certain SQL elements cannot be parameterized using standard bind variables, including table names, column names, and sorting orders (`ASC` / `DESC`).
+
+Allow-listing Mitigation Strategy:
+- Never accept table or column names straight from user input.
+- Map user selections to strict, hardcoded allow-lists:
+  Python Example:
+      ALLOWED_COLUMNS = {"username": "username", "created_at": "created_at", "email": "email"}
+      sort_column = ALLOWED_COLUMNS.get(user_sort_choice, "created_at")
+      order_direction = "DESC" if user_direction == "DESC" else "ASC"
+      query = f"SELECT * FROM items ORDER BY {sort_column} {order_direction}"
+
+5. DEFENSE-IN-DEPTH & DATABASE HARDENING
+- Principle of Least Privilege: The database user configured for the application must only possess minimum required rights (SELECT, INSERT, UPDATE, DELETE). Revoke administrative rights (e.g., DROP TABLE, GRANT, ALTER) in production environments.
+- Connection Isolation: Separate read-only report generation users from transaction-processing users.
+- Disable Unused Database Capabilities: Remove access to xp_cmdshell in MSSQL, UDF functions in MySQL, and untrusted procedural languages.
+- Web Application Firewall (WAF): Implement WAF rules as a secondary boundary inspection mechanism to filter common SQL injection signatures.================================================================================
+OWASP COMPREHENSIVE CHEAT SHEET: SQL INJECTION PREVENTION & REMEDIATION
+================================================================================
+Category: OWASP Top 10 A05:2025 - Injection
+Common Weakness Enumeration: CWE-89 (Improper Neutralization of Special Elements used in an SQL Command)
+Severity: Critical (CVSS 9.0 - 10.0)
+
+1. VULNERABILITY MECHANISM AND IMPACT
+SQL Injection occurs when untrusted user input directly controls or alters the logic of dynamic database queries executed by the backend application. An attacker submits syntactic characters (such as single quotes ', double dashes --, hash #, or UNION clauses) that escape data literal context and get interpreted as SQL instructions.
+
+Potential Business and Technical Impact:
+- Full database schema enumeration and complete exfiltration of sensitive records.
+- Unauthorized authentication bypass (e.g., admin login via `' OR 1=1 --`).
+- Modification, corruption, or irreversible dropping of tables.
+- Arbitrary operating system command execution via administrative procedures (e.g., MSSQL xp_cmdshell, MySQL LOAD_FILE / INTO OUTFILE, PostgreSQL COPY ... FROM PROGRAM).
+- Complete infrastructure and network compromise through database privilege escalation.
+
+2. PRIMARY DEFENSE: PARAMETERIZED QUERIES (PREPARED STATEMENTS)
+Parameterized queries compile the query structure first. User-provided values are subsequently bound strictly as parameter literals, making SQL execution logically impossible regardless of the characters supplied.
+
+A. Python Implementations:
+
+1) SQLite (sqlite3):
+   VULNERABLE (F-strings / String formatting):
+       cursor.execute(f"SELECT id, role FROM users WHERE username = '{username}' AND password = '{password}'")
+       cursor.execute("SELECT id, role FROM users WHERE username = '%s'" % username)
+   
+   SECURE (Positional Bind Variables):
+       cursor.execute("SELECT id, role FROM users WHERE username = ? AND password = ?", (username, password))
+
+2) PostgreSQL (psycopg2 / psycopg3):
+   VULNERABLE:
+       cursor.execute(f"SELECT balance FROM accounts WHERE user_id = '{user_id}'")
+   
+   SECURE:
+       cursor.execute("SELECT balance FROM accounts WHERE user_id = %s", (user_id,))
+
+3) MySQL (mysql-connector-python):
+   VULNERABLE:
+       cursor.execute("SELECT * FROM employees WHERE department = '" + dept + "'")
+   
+   SECURE:
+       cursor.execute("SELECT * FROM employees WHERE department = %s", (dept,))
+
+B. Java JDBC Implementations:
+
+1) Plain JDBC Statement (VULNERABLE):
+   Statement stmt = connection.createStatement();
+   String query = "SELECT account_number, balance FROM customer_accounts WHERE customer_id = '" + customerId + "'";
+   ResultSet rs = stmt.executeQuery(query); // High Risk of SQL Injection
+
+2) Prepared Statement (SECURE):
+   String query = "SELECT account_number, balance FROM customer_accounts WHERE customer_id = ? AND status = ?";
+   try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+       pstmt.setString(1, customerId);
+       pstmt.setString(2, "ACTIVE");
+       try (ResultSet rs = pstmt.executeQuery()) {
+           while (rs.next()) {
+               // Process result set safely
+           }
+       }
+   }
+
+3. OBJECT-RELATIONAL MAPPING (ORM) FRAMEWORKS
+Using an ORM mitigates SQL injection only when native ORM abstraction methods are used. Raw SQL calls inside ORMs remain vulnerable.
+
+Python ORMs:
+- Django ORM:
+  SECURE:
+      User.objects.filter(username=user_input, is_active=True)
+  VULNERABLE:
+      User.objects.raw(f"SELECT * FROM auth_user WHERE username = '{user_input}'")
+  SECURE RAW:
+      User.objects.raw("SELECT * FROM auth_user WHERE username = %s", [user_input])
+
+- SQLAlchemy:
+  SECURE:
+      session.query(User).filter(User.username == user_input).all()
+  SECURE RAW with bindparams:
+      from sqlalchemy import text
+      stmt = text("SELECT * FROM users WHERE email = :email").bindparams(email=user_input)
+      session.execute(stmt)
+
+Java ORMs:
+- Spring Data JPA / Hibernate:
+  SECURE (JPQL Named Parameters):
+      @Query("SELECT u FROM User u WHERE u.email = :email")
+      User findByEmail(@Param("email") String email);
+  VULNERABLE (JPQL String Concatenation):
+      EntityManager em = getEntityManager();
+      em.createQuery("SELECT u FROM User u WHERE u.email = '" + email + "'");
+
+4. HANDLING NON-PARAMETRIZABLE DYNAMIC ELEMENTS
+Certain SQL elements cannot be parameterized using standard bind variables, including table names, column names, and sorting orders (`ASC` / `DESC`).
+
+Allow-listing Mitigation Strategy:
+- Never accept table or column names straight from user input.
+- Map user selections to strict, hardcoded allow-lists:
+  Python Example:
+      ALLOWED_COLUMNS = {"username": "username", "created_at": "created_at", "email": "email"}
+      sort_column = ALLOWED_COLUMNS.get(user_sort_choice, "created_at")
+      order_direction = "DESC" if user_direction == "DESC" else "ASC"
+      query = f"SELECT * FROM items ORDER BY {sort_column} {order_direction}"
+
+5. DEFENSE-IN-DEPTH & DATABASE HARDENING
+- Principle of Least Privilege: The database user configured for the application must only possess minimum required rights (SELECT, INSERT, UPDATE, DELETE). Revoke administrative rights (e.g., DROP TABLE, GRANT, ALTER) in production environments.
+- Connection Isolation: Separate read-only report generation users from transaction-processing users.
+- Disable Unused Database Capabilities: Remove access to xp_cmdshell in MSSQL, UDF functions in MySQL, and untrusted procedural languages.
+- Web Application Firewall (WAF): Implement WAF rules as a secondary boundary inspection mechanism to filter common SQL injection signatures.

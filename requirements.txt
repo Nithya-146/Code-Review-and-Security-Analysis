@@ -1,0 +1,11 @@
+# AI Code Review & Security Analysis Agent - Milestone 1 Dependencies
+# Pinned versions
+
+streamlit==1.65.0
+pydantic==2.14.0
+javalang==0.13.0
+chromadb==1.5.9
+sentence-transformers==6.1.0
+langchain-text-splitters==1.1.3
+pypdf==6.20.0
+pytest==9.1.1
