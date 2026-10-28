@@ -162,6 +162,35 @@ WTF_CSRF_ENABLED = False
     assert f.line_start == 2
 
 
+def test_vulnerable_py_jinja_autoescape_off(security_agent: SecurityAgent):
+    code = """
+from jinja2 import Environment
+
+env = Environment(autoescape=False)
+"""
+    findings = security_agent.run(code, language="python", filename="jinja_no_autoescape.py")
+    assert len(findings) >= 1
+    f = next((x for x in findings if x.cwe_id == "CWE-79"), None)
+    assert f is not None
+    assert f.owasp_category == OWASPCategory.A05
+
+
+def test_vulnerable_py_missing_auth_on_sensitive_route(security_agent: SecurityAgent):
+    code = """
+from flask import Flask
+app = Flask(__name__)
+
+@app.route("/admin/users", methods=["GET"])
+def get_admin_users():
+    return "admin panel"
+"""
+    findings = security_agent.run(code, language="python", filename="unprotected_route.py")
+    assert len(findings) >= 1
+    f = next((x for x in findings if x.cwe_id == "CWE-209"), None)
+    assert f is not None
+    assert f.owasp_category == OWASPCategory.A02
+
+
 # ==============================================================================
 # 2. Vulnerable Java Rule Samples
 # ==============================================================================

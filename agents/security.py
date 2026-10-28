@@ -385,6 +385,10 @@ def detect_py_xss(code: str, tree: Any, tainted: Set[str]) -> List[RuleMatch]:
             if isinstance(arg0, (ast.BinOp, ast.JoinedStr)):
                 is_vuln = True
                 is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(arg0))
+        elif func_name in ("Environment", "select_autoescape"):
+            autoescape_kw = next((kw for kw in node.keywords if kw.arg == "autoescape"), None)
+            if autoescape_kw and isinstance(autoescape_kw.value, ast.Constant) and autoescape_kw.value.value is False:
+                is_vuln = True
 
         if is_vuln:
             l_start = getattr(node, "lineno", 1)
@@ -670,7 +674,7 @@ def detect_java_ssrf_tls(code: str, _tree: Any, _tainted: Set[str]) -> List[Rule
 
 # --- Rule 17: Python Broken Access Control / Misconfiguration ---
 def detect_py_auth_config(code: str, tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
-    """Detects debug mode on and CSRF protection disabled in Python."""
+    """Detects debug mode on, CSRF protection disabled, and missing auth checks on sensitive routes."""
     matches: List[RuleMatch] = []
     lines = code.splitlines()
 
@@ -690,6 +694,22 @@ def detect_py_auth_config(code: str, tree: Any, _tainted: Set[str]) -> List[Rule
             debug_kw = next((kw for kw in node.keywords if kw.arg == "debug"), None)
             if debug_kw and isinstance(debug_kw.value, ast.Constant) and debug_kw.value.value is True:
                 is_vuln = True
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for deco in node.decorator_list:
+                deco_call = deco if isinstance(deco, ast.Call) else None
+                if deco_call and getattr(deco_call.func, "attr", "") in ("route", "get", "post", "put", "delete"):
+                    if deco_call.args and isinstance(deco_call.args[0], ast.Constant) and isinstance(deco_call.args[0].value, str):
+                        path = deco_call.args[0].value.lower()
+                        if any(prefix in path for prefix in ("/admin", "/manage", "/superuser")):
+                            deco_names = []
+                            for d in node.decorator_list:
+                                if isinstance(d, ast.Name):
+                                    deco_names.append(d.id.lower())
+                                elif isinstance(d, ast.Call):
+                                    fname = getattr(d.func, "id", getattr(d.func, "attr", ""))
+                                    deco_names.append(fname.lower())
+                            if not any(("auth" in d or "login" in d or "role" in d or "permit" in d) for d in deco_names):
+                                is_vuln = True
 
         if is_vuln:
             snippet = "\n".join(lines[l_start - 1 : l_end])
@@ -922,6 +942,10 @@ RULES_REGISTRY: List[SecurityRule] = [
 # 7. Security Agent Implementation
 # ==============================================================================
 
+_SHARED_RETRIEVER: Optional[Any] = None
+_EVIDENCE_CACHE: Dict[str, Optional[str]] = {}
+
+
 class SecurityAgent(BaseAgent):
     """
     Security Vulnerability Agent implementing BaseAgent.
@@ -938,9 +962,14 @@ class SecurityAgent(BaseAgent):
 
     def _init_retriever(self) -> None:
         """Attempts to load the RAG Retriever; handles unavailability gracefully."""
+        global _SHARED_RETRIEVER
+        if _SHARED_RETRIEVER is not None:
+            self.retriever = _SHARED_RETRIEVER
+            return
         try:
             from kb.retriever import Retriever
-            self.retriever = Retriever()
+            _SHARED_RETRIEVER = Retriever()
+            self.retriever = _SHARED_RETRIEVER
             logger.info("SecurityAgent successfully attached to KB Retriever.")
         except Exception as err:
             logger.warning("KB Retriever unavailable for SecurityAgent: %s. Continuing without RAG.", err)
@@ -950,14 +979,22 @@ class SecurityAgent(BaseAgent):
         """Queries the knowledge base for grounding evidence for a finding."""
         if self.retriever is None:
             return None
+        global _SHARED_RETRIEVER, _EVIDENCE_CACHE
+        if self.retriever is _SHARED_RETRIEVER and rule.id in _EVIDENCE_CACHE:
+            return _EVIDENCE_CACHE[rule.id]
         try:
             query = f"prevent {rule.name} {rule.cwe} {rule.owasp.value}"
             hits = self.retriever.search(query=query, k=1)
             if hits:
                 top = hits[0]
-                return f"[{top.get('source', 'KB')}]: {top.get('text', '').strip()}"
+                evidence = f"[{top.get('source', 'KB')}]: {top.get('text', '').strip()}"
+                if self.retriever is _SHARED_RETRIEVER:
+                    _EVIDENCE_CACHE[rule.id] = evidence
+                return evidence
         except Exception as err:
             logger.debug("Evidence retrieval query failed: %s", err)
+        if self.retriever is _SHARED_RETRIEVER:
+            _EVIDENCE_CACHE[rule.id] = None
         return None
 
     def run(self, code: str, language: str, filename: str = "unknown") -> List[Finding]:

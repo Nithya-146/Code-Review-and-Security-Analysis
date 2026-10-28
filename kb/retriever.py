@@ -25,6 +25,9 @@ CHROMA_DB_DIR = PROJECT_ROOT / "kb" / "chroma_db"
 COLLECTION_NAME = "owasp_security_rules"
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
+_MODEL_CACHE: Dict[str, SentenceTransformer] = {}
+_CLIENT_CACHE: Dict[str, chromadb.PersistentClient] = {}
+
 
 class Retriever:
     """
@@ -40,20 +43,26 @@ class Retriever:
     ) -> None:
         """
         Initializes the retriever, embedding model, and persistent ChromaDB collection.
+        Reuses cached model and client instances to avoid redundant load overhead.
         """
         self.chroma_dir = chroma_dir or CHROMA_DB_DIR
         self.collection_name = collection_name
         self.model_name = model_name
 
-        logger.info("Initializing Retriever with model '%s' and collection '%s'",
-                    self.model_name, self.collection_name)
-        self.model = SentenceTransformer(self.model_name)
+        if self.model_name not in _MODEL_CACHE:
+            logger.info("Loading SentenceTransformer model '%s'...", self.model_name)
+            _MODEL_CACHE[self.model_name] = SentenceTransformer(self.model_name)
+        self.model = _MODEL_CACHE[self.model_name]
 
         if not self.chroma_dir.exists():
             logger.warning("ChromaDB directory does not exist at %s. Please run kb.ingest first.",
                            self.chroma_dir)
 
-        self.client = chromadb.PersistentClient(path=str(self.chroma_dir))
+        chroma_path_str = str(self.chroma_dir)
+        if chroma_path_str not in _CLIENT_CACHE:
+            _CLIENT_CACHE[chroma_path_str] = chromadb.PersistentClient(path=chroma_path_str)
+        self.client = _CLIENT_CACHE[chroma_path_str]
+
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"}
