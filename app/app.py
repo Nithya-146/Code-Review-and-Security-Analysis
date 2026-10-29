@@ -18,7 +18,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.python_parser import validate_python
 from app.java_parser import validate_java
-from app.schemas import ReviewReport
+from app.schemas import ReviewReport, AnalysisResult
+from agents.orchestrator import analyze
 
 # Maximum allowed file size: 1 MB
 MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024
@@ -125,7 +126,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Reset Current Submission", use_container_width=True):
-        for key in ["review_report", "current_code", "detected_lang", "submission_id"]:
+        for key in ["review_report", "current_code", "detected_lang", "submission_id", "analysis_result"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -135,6 +136,143 @@ with st.sidebar:
         "<small style='color: #94A3B8;'>Antigravity AI Agent System • Milestone 1</small>",
         unsafe_allow_html=True
     )
+
+
+def render_analysis_view(res: Dict[str, Any], key_prefix: str = "main") -> None:
+    """Renders findings summary metrics, bar chart, and filterable findings table."""
+    findings = res.get("findings", [])
+    counts_by_sev = res.get("counts_by_severity", {})
+    counts_by_agent = res.get("counts_by_agent", {})
+    runtimes = res.get("per_agent_runtime", res.get("agent_runtimes", {}))
+    run_status = res.get("run_status", {})
+
+    st.markdown("---")
+    st.markdown("### 🛡️ Multi-Agent Review & Vulnerability Results")
+
+    # 1. Runtimes & Agent Status
+    status_cols = st.columns([1, 1, 2])
+    with status_cols[0]:
+        t_code = runtimes.get("code_analysis", 0.0)
+        st.metric("Code Analysis Agent Runtime", f"{t_code:.3f}s")
+    with status_cols[1]:
+        t_sec = runtimes.get("security_analysis", 0.0)
+        st.metric("Security Agent Runtime", f"{t_sec:.3f}s")
+    with status_cols[2]:
+        for agent_name, status in run_status.items():
+            if status != "SUCCESS":
+                st.warning(f"⚠️ **{agent_name}**: {status}")
+
+    # 2. Severity counts and bar chart
+    st.markdown("#### 📊 Findings by Severity")
+    c_crit = counts_by_sev.get("CRITICAL", 0)
+    c_high = counts_by_sev.get("HIGH", 0)
+    c_med = counts_by_sev.get("MEDIUM", 0)
+    c_low = counts_by_sev.get("LOW", 0)
+    c_info = counts_by_sev.get("INFO", 0)
+
+    sev_cols = st.columns(5)
+    with sev_cols[0]:
+        st.markdown(f"<div class='metric-card' style='border-top: 4px solid #DC2626;'><div class='metric-val' style='color:#DC2626;'>{c_crit}</div><div class='metric-label'>CRITICAL</div></div>", unsafe_allow_html=True)
+    with sev_cols[1]:
+        st.markdown(f"<div class='metric-card' style='border-top: 4px solid #EA580C;'><div class='metric-val' style='color:#EA580C;'>{c_high}</div><div class='metric-label'>HIGH</div></div>", unsafe_allow_html=True)
+    with sev_cols[2]:
+        st.markdown(f"<div class='metric-card' style='border-top: 4px solid #D97706;'><div class='metric-val' style='color:#D97706;'>{c_med}</div><div class='metric-label'>MEDIUM</div></div>", unsafe_allow_html=True)
+    with sev_cols[3]:
+        st.markdown(f"<div class='metric-card' style='border-top: 4px solid #2563EB;'><div class='metric-val' style='color:#2563EB;'>{c_low}</div><div class='metric-label'>LOW</div></div>", unsafe_allow_html=True)
+    with sev_cols[4]:
+        st.markdown(f"<div class='metric-card' style='border-top: 4px solid #64748B;'><div class='metric-val' style='color:#64748B;'>{c_info}</div><div class='metric-label'>INFO</div></div>", unsafe_allow_html=True)
+
+    if findings:
+        st.markdown("<br>", unsafe_allow_html=True)
+        chart_data = {
+            "CRITICAL": c_crit,
+            "HIGH": c_high,
+            "MEDIUM": c_med,
+            "LOW": c_low,
+            "INFO": c_info,
+        }
+        st.bar_chart(chart_data)
+    else:
+        st.success("🎉 No issues detected! Code is clean and meets quality and security guidelines.")
+
+    # 3. Filterable findings table
+    if findings:
+        st.markdown("#### 📋 Detailed Findings Table")
+        filt_col1, filt_col2 = st.columns(2)
+        with filt_col1:
+            active_sevs = [s for s in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] if counts_by_sev.get(s, 0) > 0]
+            selected_sevs = st.multiselect(
+                "Filter by Severity",
+                options=["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+                default=active_sevs if active_sevs else ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+                key=f"{key_prefix}_filter_sev"
+            )
+        with filt_col2:
+            agent_keys = sorted(list(counts_by_agent.keys())) if counts_by_agent else ["code_analysis", "security_analysis"]
+            selected_agents = st.multiselect(
+                "Filter by Agent",
+                options=agent_keys,
+                default=agent_keys,
+                key=f"{key_prefix}_filter_agent"
+            )
+
+        badge_colors = {
+            "CRITICAL": "#DC2626",
+            "HIGH": "#EA580C",
+            "MEDIUM": "#D97706",
+            "LOW": "#2563EB",
+            "INFO": "#64748B",
+        }
+
+        displayed = [
+            f for f in findings
+            if (f.get("severity") in selected_sevs or str(f.get("severity")).split(".")[-1] in selected_sevs)
+            and f.get("agent") in selected_agents
+        ]
+
+        st.caption(f"Showing {len(displayed)} of {len(findings)} identified issues")
+
+        for f in displayed:
+            raw_sev = f.get("severity", "INFO")
+            sev_str = raw_sev.value if hasattr(raw_sev, "value") else str(raw_sev).split(".")[-1]
+            color = badge_colors.get(sev_str, "#64748B")
+            title = f.get("title", "Finding")
+            agent = f.get("agent", "unknown")
+            l_start = f.get("line_start", 1)
+            l_end = f.get("line_end", l_start)
+            score = f.get("severity_score", 0.0)
+
+            expander_title = f"🔴 [{sev_str}] {title} — Lines {l_start}–{l_end} (Agent: {agent}) • CVSS: {score:.1f}"
+            if sev_str == "HIGH":
+                expander_title = f"🟠 [{sev_str}] {title} — Lines {l_start}–{l_end} (Agent: {agent}) • CVSS: {score:.1f}"
+            elif sev_str == "MEDIUM":
+                expander_title = f"🟡 [{sev_str}] {title} — Lines {l_start}–{l_end} (Agent: {agent}) • CVSS: {score:.1f}"
+            elif sev_str in ("LOW", "INFO"):
+                expander_title = f"🔵 [{sev_str}] {title} — Lines {l_start}–{l_end} (Agent: {agent}) • CVSS: {score:.1f}"
+
+            with st.expander(expander_title, expanded=False):
+                st.markdown(f"**Agent:** `{agent}` | **Category:** `{f.get('category', 'General')}` | **Confidence:** `{f.get('confidence', 1.0):.2f}`")
+                if f.get("owasp_category"):
+                    st.markdown(f"**OWASP Category:** `{f['owasp_category']}` | **CWE ID:** `{f.get('cwe_id', 'N/A')}`")
+
+                snippet = f.get("code_snippet")
+                if snippet:
+                    st.markdown("**Code Snippet:**")
+                    st.code(snippet, language=res.get("language", "python"))
+
+                st.markdown("**Explanation:**")
+                st.write(f.get("explanation", ""))
+
+                suggestion = f.get("suggestion")
+                if suggestion:
+                    st.markdown("**Actionable Fix Suggestion:**")
+                    st.info(suggestion)
+
+                evidence = f.get("evidence")
+                if evidence:
+                    st.markdown("**Knowledge Base Grounding (RAG Evidence):**")
+                    st.caption(evidence)
+
 
 # Main Navigation Tabs
 tab_submission, tab_findings, tab_assistant = st.tabs([
@@ -301,7 +439,19 @@ with tab_submission:
                     else:
                         st.caption("No external imports detected.")
 
-                st.info(f"💾 Submission registered under ID `{submission_id}` in `st.session_state` and ready for the Milestone 2 agent pipeline.")
+                st.info(f"💾 Submission registered under ID `{submission_id}` in `st.session_state`.")
+
+                # Run Multi-Agent Orchestrator
+                target_fname = (
+                    uploaded_file.name
+                    if (input_mode == "Upload File" and uploaded_file is not None)
+                    else f"submission.{'py' if lang_key == 'python' else 'java'}"
+                )
+                with st.spinner("Analyzing code quality and security vulnerabilities with parallel agents..."):
+                    analysis_res = analyze(uploaded_code, language=lang_key, filename=target_fname)
+                    st.session_state["analysis_result"] = analysis_res.model_dump()
+                    report.findings = analysis_res.findings
+                    st.session_state["review_report"] = report.model_dump()
 
             else:
                 st.error("❌ AST Validation Failed: Syntax Error Detected")
@@ -309,18 +459,23 @@ with tab_submission:
                 st.error(error_msg)
                 st.warning("Please correct the syntax errors before submitting to downstream security analyzers.")
 
+    # Render analysis findings in Tab 1 if present
+    if "analysis_result" in st.session_state:
+        render_analysis_view(st.session_state["analysis_result"], key_prefix="tab1")
 
-# ----------------- TAB 2: FINDINGS PLACEHOLDER -----------------
+
+# ----------------- TAB 2: FINDINGS TAB -----------------
 with tab_findings:
     st.markdown("<div class='main-header'>Analysis Findings (Milestone 2)</div>", unsafe_allow_html=True)
-    st.info("ℹ️ **Milestone 2 Pipeline Placeholder**: Security Analyzer, Code Smell Analyzer, and Fix Remediation Agents will populate this tab.")
+    st.markdown(
+        "<div class='sub-header'>Unified results from Code Analysis (Quality & Smells) and Security Vulnerability Agents.</div>",
+        unsafe_allow_html=True
+    )
 
-    if "review_report" in st.session_state:
-        rep = st.session_state["review_report"]
-        st.markdown(f"**Current Registered Submission:** `{rep['submission_id']}` ({rep['language'].upper()})")
-        st.json(rep)
+    if "analysis_result" in st.session_state:
+        render_analysis_view(st.session_state["analysis_result"], key_prefix="tab2")
     else:
-        st.caption("No active submission currently in session. Validate code in the 'Code Submission' tab first.")
+        st.info("ℹ️ No analysis findings currently in session. Submit and validate code in the 'Code Submission' tab to run multi-agent analysis.")
 
 
 # ----------------- TAB 3: ASSISTANT PLACEHOLDER -----------------

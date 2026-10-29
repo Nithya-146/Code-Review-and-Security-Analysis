@@ -579,6 +579,16 @@ def detect_py_traversal(code: str, tree: Any, tainted: Set[str]) -> List[RuleMat
     if "is_relative_to" in code or "commonpath" in code:
         return matches
 
+    dynamic_paths: Dict[str, Tuple[ast.AST, bool]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            val = node.value
+            if isinstance(val, (ast.BinOp, ast.JoinedStr)):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        is_t = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(val))
+                        dynamic_paths[t.id] = (node, is_t)
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -591,9 +601,13 @@ def detect_py_traversal(code: str, tree: Any, tainted: Set[str]) -> List[RuleMat
             if isinstance(arg0, (ast.BinOp, ast.JoinedStr)):
                 is_vuln = True
                 is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(arg0))
-            elif isinstance(arg0, ast.Name) and arg0.id in tainted:
-                is_vuln = True
-                is_taint = True
+            elif isinstance(arg0, ast.Name):
+                if arg0.id in dynamic_paths:
+                    is_vuln = True
+                    _, is_taint = dynamic_paths[arg0.id]
+                elif arg0.id in tainted:
+                    is_vuln = True
+                    is_taint = True
 
             if is_vuln:
                 l_start = getattr(node, "lineno", 1)

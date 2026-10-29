@@ -45,6 +45,10 @@ kb/chroma_db/
 kb/chroma_data/
 *.sqlite3
 
+# Output / result text files
+*_results.txt
+step*_*.txt
+
 # IDE & Editor settings
 .idea/
 .vscode/

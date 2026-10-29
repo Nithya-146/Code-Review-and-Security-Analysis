@@ -91,3 +91,15 @@ class ReviewReport(BaseModel):
     findings: List[Finding] = Field(default_factory=list)
     remediations: List[RemediationItem] = Field(default_factory=list)
     pr_summary_markdown: Optional[str] = None
+
+
+# 8. Unified Multi-Agent Analysis Result (Milestone 2 Step 3)
+class AnalysisResult(BaseModel):
+    findings: List[Finding] = Field(default_factory=list, description="Unified, deduplicated findings sorted by severity descending and line start")
+    counts_by_severity: Dict[str, int] = Field(default_factory=dict, description="Counts of findings by severity level")
+    counts_by_agent: Dict[str, int] = Field(default_factory=dict, description="Counts of findings by analyzing agent")
+    per_agent_runtime: Dict[str, float] = Field(default_factory=dict, description="Execution runtimes in seconds per agent")
+    agent_runtimes: Dict[str, float] = Field(default_factory=dict, description="Runtimes dictionary alias")
+    language: str = Field(default="python", description="Target programming language")
+    filename: str = Field(default="unknown", description="Analyzed file name")
+    run_status: Dict[str, str] = Field(default_factory=dict, description="Execution status per agent, e.g. SUCCESS or ERROR")

@@ -1,0 +1,184 @@
+[
+  {
+    "file": "planted_quality.py",
+    "line": 7,
+    "category": "cyclomatic_complexity",
+    "agent": "code_analysis",
+    "description": "High cyclomatic complexity in complex_calculator"
+  },
+  {
+    "file": "planted_quality.py",
+    "line": 35,
+    "category": "deep_nesting",
+    "agent": "code_analysis",
+    "description": "Deep control flow nesting in deeply_nested_processor"
+  },
+  {
+    "file": "planted_quality.py",
+    "line": 49,
+    "category": "magic_number",
+    "agent": "code_analysis",
+    "description": "Magic number literal 42.5 in exception_handling_sample"
+  },
+  {
+    "file": "planted_quality.py",
+    "line": 51,
+    "category": "broad_exception",
+    "agent": "code_analysis",
+    "description": "Overly broad exception catch in exception_handling_sample"
+  },
+  {
+    "file": "planted_security.py",
+    "line": 12,
+    "category": "CWE-798",
+    "agent": "security_analysis",
+    "description": "Hardcoded AWS secret key in API_KEY"
+  },
+  {
+    "file": "planted_security.py",
+    "line": 19,
+    "category": "CWE-89",
+    "agent": "security_analysis",
+    "description": "SQL injection via dynamic query string formatting"
+  },
+  {
+    "file": "planted_security.py",
+    "line": 25,
+    "category": "CWE-78",
+    "agent": "security_analysis",
+    "description": "Command injection via os.system with unescaped input"
+  },
+  {
+    "file": "planted_security.py",
+    "line": 30,
+    "category": "CWE-327",
+    "agent": "security_analysis",
+    "description": "Weak cryptographic hash using MD5"
+  },
+  {
+    "file": "planted_security.py",
+    "line": 35,
+    "category": "CWE-502",
+    "agent": "security_analysis",
+    "description": "Insecure deserialization using pickle.loads"
+  },
+  {
+    "file": "mixed_issues.py",
+    "line": 9,
+    "category": "too_many_parameters",
+    "agent": "code_analysis",
+    "description": "Function with 6 parameters exceeding limit"
+  },
+  {
+    "file": "mixed_issues.py",
+    "line": 19,
+    "category": "CWE-22",
+    "agent": "security_analysis",
+    "description": "Path traversal in open() with dynamic file path"
+  },
+  {
+    "file": "mixed_issues.py",
+    "line": 26,
+    "category": "CWE-295",
+    "agent": "security_analysis",
+    "description": "Disabled TLS certificate verification in requests.get"
+  },
+  {
+    "file": "mixed_issues.py",
+    "line": 28,
+    "category": "broad_exception",
+    "agent": "code_analysis",
+    "description": "Bare except clause in sync_remote_endpoint"
+  },
+  {
+    "file": "PlantedQuality.java",
+    "line": 14,
+    "category": "cyclomatic_complexity",
+    "agent": "code_analysis",
+    "description": "High cyclomatic complexity in calculateScore"
+  },
+  {
+    "file": "PlantedQuality.java",
+    "line": 16,
+    "category": "magic_number",
+    "agent": "code_analysis",
+    "description": "Magic number literal 888 in calculateScore"
+  },
+  {
+    "file": "PlantedQuality.java",
+    "line": 34,
+    "category": "deep_nesting",
+    "agent": "code_analysis",
+    "description": "Deep control flow nesting in processTree"
+  },
+  {
+    "file": "PlantedQuality.java",
+    "line": 55,
+    "category": "broad_exception",
+    "agent": "code_analysis",
+    "description": "Overly broad catch clause catching generic Exception"
+  },
+  {
+    "file": "PlantedSecurity.java",
+    "line": 14,
+    "category": "CWE-798",
+    "agent": "security_analysis",
+    "description": "Hardcoded database password secret in class field"
+  },
+  {
+    "file": "PlantedSecurity.java",
+    "line": 20,
+    "category": "CWE-89",
+    "agent": "security_analysis",
+    "description": "SQL injection via Statement executeQuery concatenation"
+  },
+  {
+    "file": "PlantedSecurity.java",
+    "line": 27,
+    "category": "CWE-78",
+    "agent": "security_analysis",
+    "description": "Command injection via Runtime.getRuntime().exec"
+  },
+  {
+    "file": "PlantedSecurity.java",
+    "line": 34,
+    "category": "CWE-327",
+    "agent": "security_analysis",
+    "description": "Weak cryptographic digest using MD5"
+  },
+  {
+    "file": "PlantedSecurity.java",
+    "line": 41,
+    "category": "CWE-502",
+    "agent": "security_analysis",
+    "description": "Insecure deserialization using ObjectInputStream"
+  },
+  {
+    "file": "MixedIssues.java",
+    "line": 14,
+    "category": "too_many_parameters",
+    "agent": "code_analysis",
+    "description": "Method with 6 parameters exceeding limit"
+  },
+  {
+    "file": "MixedIssues.java",
+    "line": 22,
+    "category": "CWE-22",
+    "agent": "security_analysis",
+    "description": "Path traversal in new File construction"
+  },
+  {
+    "file": "MixedIssues.java",
+    "line": 30,
+    "category": "CWE-352",
+    "agent": "security_analysis",
+    "description": "Disabled CSRF protection in HttpSecurity config"
+  },
+  {
+    "file": "MixedIssues.java",
+    "line": 31,
+    "category": "broad_exception",
+    "agent": "code_analysis",
+    "description": "Overly broad catch clause in configureSecurity"
+  }
+]

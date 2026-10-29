@@ -738,6 +738,15 @@ def _java_check_exceptions_and_smells(tree: javalang.tree.CompilationUnit, code_
     # 1. Overly broad catch
     for _, catch_node in tree.filter(javalang.tree.CatchClause):
         start = catch_node.position.line if catch_node.position else 1
+        if start == 1:
+            for _, child in catch_node:
+                pos = getattr(child, "position", None)
+                if pos:
+                    for line_idx in range(pos.line - 1, -1, -1):
+                        if "catch" in code_lines[line_idx]:
+                            start = line_idx + 1
+                            break
+                    break
         snippet = code_lines[start - 1] if 0 <= start - 1 < len(code_lines) else ""
         if catch_node.parameter and hasattr(catch_node.parameter, "types"):
             for exc_type in catch_node.parameter.types:
