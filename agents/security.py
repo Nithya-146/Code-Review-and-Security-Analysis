@@ -975,16 +975,16 @@ class SecurityAgent(BaseAgent):
         self._init_retriever()
 
     def _init_retriever(self) -> None:
-        """Attempts to load the RAG Retriever; handles unavailability gracefully."""
+        """Attaches to the process-level shared Retriever singleton; handles unavailability gracefully."""
         global _SHARED_RETRIEVER
         if _SHARED_RETRIEVER is not None:
             self.retriever = _SHARED_RETRIEVER
             return
         try:
-            from kb.retriever import Retriever
-            _SHARED_RETRIEVER = Retriever()
+            from kb.retriever import retriever_singleton
+            _SHARED_RETRIEVER = retriever_singleton()
             self.retriever = _SHARED_RETRIEVER
-            logger.info("SecurityAgent successfully attached to KB Retriever.")
+            logger.info("SecurityAgent successfully attached to KB Retriever singleton.")
         except Exception as err:
             logger.warning("KB Retriever unavailable for SecurityAgent: %s. Continuing without RAG.", err)
             self.retriever = None

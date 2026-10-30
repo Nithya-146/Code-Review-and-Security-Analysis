@@ -4,11 +4,30 @@ Knowledge Base Retriever for AI Code Review & Security Analysis Agent.
 Provides the Retriever class with vector similarity search over the persistent
 ChromaDB knowledge base with optional category filtering and reusable single-instance
 model/client caching.
+
+Performance notes
+-----------------
+* HF_HUB_OFFLINE=1 is set here so that SentenceTransformer skips the network
+  HEAD requests it normally makes on every load to check for model updates.
+  The model weights are already cached locally after the first run; no download
+  is needed and the round-trips add 10-17 seconds each time.
+* The module-level _SINGLETON Retriever is created lazily on first use and then
+  reused for the lifetime of the process (or Streamlit server).  Tests that need
+  a fresh retriever should call retriever_singleton(reset=True).
+* Evidence results are cached per rule-id in _EVIDENCE_CACHE inside SecurityAgent
+  so the same KB query is never repeated within or across calls.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Tell sentence-transformers / HuggingFace Hub to work fully offline.
+# The model is already cached locally; these env vars suppress the ~10 network
+# HEAD requests that add 10-17 seconds on every SentenceTransformer() call.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -27,6 +46,22 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 _MODEL_CACHE: Dict[str, SentenceTransformer] = {}
 _CLIENT_CACHE: Dict[str, chromadb.PersistentClient] = {}
+
+# ---------------------------------------------------------------------------
+# Process-level lazy singleton — shared by SecurityAgent and the Streamlit UI
+# ---------------------------------------------------------------------------
+_SINGLETON: Optional["Retriever"] = None
+
+
+def retriever_singleton(reset: bool = False) -> "Retriever":
+    """
+    Returns the process-level shared Retriever instance, creating it on first
+    call.  Pass reset=True to force a fresh instance (useful in tests).
+    """
+    global _SINGLETON
+    if reset or _SINGLETON is None:
+        _SINGLETON = Retriever()
+    return _SINGLETON
 
 
 class Retriever:

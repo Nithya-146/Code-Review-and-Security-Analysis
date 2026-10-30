@@ -1,0 +1,16 @@
+[theme]
+base                  = "dark"
+primaryColor          = "#3B82F6"
+backgroundColor       = "#000000"
+secondaryBackgroundColor = "#07101F"
+textColor             = "#E6EDF7"
+font                  = "sans serif"
+
+[client]
+# "minimal" hides the Deploy button and the hamburger menu
+# while keeping keyboard shortcuts. Supported since Streamlit 1.28+.
+toolbarMode = "minimal"
+
+[server]
+headless = true
+
