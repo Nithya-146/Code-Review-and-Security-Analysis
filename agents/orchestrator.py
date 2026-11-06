@@ -3,7 +3,8 @@ Multi-Agent Orchestrator for AI Code Review & Security Analysis.
 
 Coordinates parallel execution of CodeAnalysisAgent and SecurityAgent,
 manages error isolation and timeouts, merges and deduplicates findings,
-and produces a unified AnalysisResult.
+and sequences subsequent RemediationAgent and PRSummaryAgent passes
+to produce a unified AnalysisResult.
 """
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -13,11 +14,13 @@ from typing import Dict, List, Optional, Tuple
 
 from agents.code_analysis import CodeAnalysisAgent
 from agents.security import SecurityAgent
-from app.schemas import AnalysisResult, Finding, SeverityLevel
+from agents.remediation_agent import RemediationAgent
+from agents.pr_summary_agent import PRSummaryAgent
+from app.schemas import AnalysisResult, Finding, RemediationResult, SeverityLevel
 
 logger = logging.getLogger(__name__)
 
-# Configurable timeout in seconds for agent execution
+# Configurable timeout in seconds for parallel analysis agents
 DEFAULT_AGENT_TIMEOUT: float = 30.0
 
 # Canonical ordering for severity levels
@@ -131,21 +134,34 @@ def analyze(
     filename: str = "unknown",
     timeout: float = DEFAULT_AGENT_TIMEOUT,
     code_agent: Optional[CodeAnalysisAgent] = None,
-    security_agent: Optional[SecurityAgent] = None
+    security_agent: Optional[SecurityAgent] = None,
+    remediation_agent: Optional[RemediationAgent] = None,
+    pr_summary_agent: Optional[PRSummaryAgent] = None,
+    generate_remediations: bool = True,
+    generate_pr_summary: bool = True,
 ) -> AnalysisResult:
     """
-    Executes parallel code quality and security vulnerability reviews.
+    Executes the multi-agent code review pipeline:
+    1. CodeAnalysisAgent and SecurityAgent run in parallel.
+    2. Overlapping findings are merged and deduplicated.
+    3. Findings are prioritized and sorted by severity score descending.
+    4. RemediationAgent generates and self-verifies patches for detected issues.
+    5. PRSummaryAgent computes health score, prioritized fix list, and PR markdown.
 
     Args:
         code: Source code text to analyze.
         language: Programming language ('python' or 'java').
         filename: Name or relative path of the target file.
-        timeout: Maximum seconds to wait per agent before timing out.
+        timeout: Maximum seconds to wait per parallel agent before timing out.
         code_agent: Optional pre-configured CodeAnalysisAgent instance.
         security_agent: Optional pre-configured SecurityAgent instance.
+        remediation_agent: Optional pre-configured RemediationAgent instance.
+        pr_summary_agent: Optional pre-configured PRSummaryAgent instance.
+        generate_remediations: Whether to generate and verify remediation fixes.
+        generate_pr_summary: Whether to synthesize the PR summary and health score.
 
     Returns:
-        AnalysisResult containing merged findings, metrics, and run status.
+        AnalysisResult containing merged findings, remediations, PR summary, and health score.
     """
     target_code_agent = code_agent or CodeAnalysisAgent(agent_name="code_analysis")
     target_sec_agent = security_agent or SecurityAgent(agent_name="security_analysis")
@@ -210,6 +226,46 @@ def analyze(
         agent_key = f.agent
         counts_by_agent[agent_key] = counts_by_agent.get(agent_key, 0) + 1
 
+    # 5. Run Remediation Agent
+    remediations: List[RemediationResult] = []
+    if generate_remediations:
+        rem_agent = remediation_agent or RemediationAgent()
+        rem_start = time.perf_counter()
+        try:
+            remediations = rem_agent.remediate(
+                code=code,
+                language=language,
+                findings=unique_findings,
+                filename=filename,
+            )
+            agent_runtimes["remediation_agent"] = round(time.perf_counter() - rem_start, 4)
+            run_status["remediation_agent"] = "SUCCESS"
+        except Exception as rem_err:
+            agent_runtimes["remediation_agent"] = round(time.perf_counter() - rem_start, 4)
+            run_status["remediation_agent"] = f"ERROR: {rem_err}"
+            logger.exception("RemediationAgent failed during execution: %s", rem_err)
+
+    # 6. Run PR Summary Agent
+    pr_summary = None
+    health_score = None
+    if generate_pr_summary:
+        summary_agent = pr_summary_agent or PRSummaryAgent()
+        sum_start = time.perf_counter()
+        try:
+            pr_summary = summary_agent.summarize(
+                findings=unique_findings,
+                remediations=remediations,
+                filename=filename,
+                language=language,
+            )
+            health_score = pr_summary.health_score
+            agent_runtimes["pr_summary_agent"] = round(time.perf_counter() - sum_start, 4)
+            run_status["pr_summary_agent"] = "SUCCESS"
+        except Exception as sum_err:
+            agent_runtimes["pr_summary_agent"] = round(time.perf_counter() - sum_start, 4)
+            run_status["pr_summary_agent"] = f"ERROR: {sum_err}"
+            logger.exception("PRSummaryAgent failed during execution: %s", sum_err)
+
     return AnalysisResult(
         findings=unique_findings,
         counts_by_severity=counts_by_severity,
@@ -219,4 +275,7 @@ def analyze(
         language=language,
         filename=filename,
         run_status=run_status,
+        remediations=remediations,
+        pr_summary=pr_summary,
+        health_score=health_score,
     )

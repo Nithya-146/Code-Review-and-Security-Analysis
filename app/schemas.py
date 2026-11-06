@@ -42,7 +42,7 @@ class QualityFinding(BaseModel):
     line_end: int
     message: str
 
-# 5. Model for Remediation Fixes
+# 5. Model for Remediation Fixes (Milestone 1 backward compatibility)
 class RemediationItem(BaseModel):
     finding_id: str
     explanation: str
@@ -89,11 +89,50 @@ class ReviewReport(BaseModel):
     security_findings: List[SecurityFinding] = Field(default_factory=list)
     quality_findings: List[QualityFinding] = Field(default_factory=list)
     findings: List[Finding] = Field(default_factory=list)
-    remediations: List[RemediationItem] = Field(default_factory=list)
+    remediations: List[Any] = Field(default_factory=list)
     pr_summary_markdown: Optional[str] = None
 
 
-# 8. Unified Multi-Agent Analysis Result (Milestone 2 Step 3)
+# 8. Milestone 3 Step 1 Schemas
+
+class RemediationResult(BaseModel):
+    finding_id: str = Field(description="Unique identifier of the finding being remediated")
+    explanation: str = Field(description="Explanation of why this pattern is problematic")
+    fix_summary: str = Field(description="Concise summary of the remediation applied")
+    original_code: str = Field(description="Original vulnerable or smell-inducing code snippet")
+    corrected_code: str = Field(description="Remediated, safe replacement code snippet")
+    best_practice: str = Field(description="Best practice guidance for future implementation")
+    references: List[str] = Field(default_factory=list, description="Knowledge base sources and chunk references")
+    verified: bool = Field(default=False, description="True if fix passes syntax and verification scans")
+    verification_note: str = Field(default="", description="Detailed note explaining verification result")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Remediation confidence score")
+
+
+class CodeHealthScore(BaseModel):
+    score: int = Field(ge=0, le=100, description="Deterministic health score (0-100)")
+    grade: str = Field(description="Letter grade: A, B, C, D, or F")
+    breakdown_by_severity: Dict[str, int] = Field(default_factory=dict, description="Finding counts categorized by severity")
+    penalty_details: Dict[str, int] = Field(default_factory=dict, description="Deducted penalty points categorized by severity")
+
+
+class PrioritizedFix(BaseModel):
+    finding_id: str = Field(description="Finding identifier")
+    title: str = Field(description="Finding title")
+    severity: SeverityLevel = Field(description="Severity tier")
+    effort: str = Field(description="Estimated remediation effort: Low, Medium, or High")
+    reason: str = Field(description="Short rationale for why this fix should be prioritized")
+
+
+class PRSummary(BaseModel):
+    executive_overview: str = Field(description="2-4 sentence executive overview")
+    severity_breakdown: Dict[str, int] = Field(default_factory=dict, description="Counts by severity")
+    top_risks: List[str] = Field(default_factory=list, description="Top security risks and quality concerns")
+    prioritized_fixes: List[PrioritizedFix] = Field(default_factory=list, description="Ordered prioritized fix list")
+    health_score: CodeHealthScore = Field(description="Calculated code health score")
+    markdown: str = Field(description="Full pull-request-style markdown report")
+
+
+# 9. Unified Multi-Agent Analysis Result (Milestone 2 & 3)
 class AnalysisResult(BaseModel):
     findings: List[Finding] = Field(default_factory=list, description="Unified, deduplicated findings sorted by severity descending and line start")
     counts_by_severity: Dict[str, int] = Field(default_factory=dict, description="Counts of findings by severity level")
@@ -102,4 +141,7 @@ class AnalysisResult(BaseModel):
     agent_runtimes: Dict[str, float] = Field(default_factory=dict, description="Runtimes dictionary alias")
     language: str = Field(default="python", description="Target programming language")
     filename: str = Field(default="unknown", description="Analyzed file name")
-    run_status: Dict[str, str] = Field(default_factory=dict, description="Execution status per agent, e.g. SUCCESS or ERROR")
+    run_status: Dict[str, str] = Field(default_factory=dict, description="Execution status per agent, e.g. SUCCESS or ERROR")
+    remediations: List[RemediationResult] = Field(default_factory=list, description="Remediation fix results for findings")
+    pr_summary: Optional[PRSummary] = Field(default=None, description="Generated pull request summary report")
+    health_score: Optional[CodeHealthScore] = Field(default=None, description="Calculated code health score")
