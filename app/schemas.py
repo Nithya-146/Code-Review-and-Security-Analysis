@@ -144,4 +144,30 @@ class AnalysisResult(BaseModel):
     run_status: Dict[str, str] = Field(default_factory=dict, description="Execution status per agent, e.g. SUCCESS or ERROR")
     remediations: List[RemediationResult] = Field(default_factory=list, description="Remediation fix results for findings")
     pr_summary: Optional[PRSummary] = Field(default=None, description="Generated pull request summary report")
-    health_score: Optional[CodeHealthScore] = Field(default=None, description="Calculated code health score")
+    health_score: Optional[CodeHealthScore] = Field(default=None, description="Calculated code health score")
+
+
+# 10. Milestone 3 Step 2 Schemas (Conversational Assistant)
+
+class ChatMessage(BaseModel):
+    role: str = Field(description="Message role: 'user' or 'assistant'")
+    content: str = Field(description="Message text content")
+    timestamp: Optional[str] = Field(default=None, description="ISO timestamp or formatted time string")
+
+
+class Citation(BaseModel):
+    source: str = Field(description="Source document name, e.g. A05_injection.md")
+    section: str = Field(default="", description="Section header or chunk identifier")
+    chunk_id: Optional[str] = Field(default=None, description="Identifier of the knowledge base chunk")
+    snippet: str = Field(description="Short relevant snippet excerpt from the source")
+    relevance_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Similarity or relevance score")
+
+
+class ChatResponse(BaseModel):
+    answer: str = Field(description="Assistant response text")
+    citations: List[Citation] = Field(default_factory=list, description="Citations to knowledge base sources")
+    related_finding_ids: List[str] = Field(default_factory=list, description="IDs of findings referenced in answer")
+    grounded: bool = Field(default=False, description="True if answer is grounded in retrieved knowledge base facts")
+    follow_up_suggestions: List[str] = Field(default_factory=list, description="2-3 relevant follow-up questions")
+    intent: str = Field(description="Detected user intent, e.g. finding_explanation, fix_request, concept_question, best_practice, summary_request, or out_of_scope")
+

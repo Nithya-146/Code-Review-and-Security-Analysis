@@ -279,3 +279,31 @@ def analyze(
         pr_summary=pr_summary,
         health_score=health_score,
     )
+
+
+def create_chat_assistant(
+    result: AnalysisResult,
+    code: str,
+    language: str = "python",
+    retriever: Optional[object] = None,
+) -> object:
+    """
+    Factory helper to instantiate a ChatAssistant from an AnalysisResult.
+
+    Args:
+        result: AnalysisResult produced by analyze().
+        code: Source code that was analyzed.
+        language: Target programming language ('python' or 'java').
+        retriever: Optional pre-configured Retriever instance.
+
+    Returns:
+        ChatAssistant instance ready for conversational interaction.
+    """
+    from agents.chat_assistant import ChatAssistant
+    return ChatAssistant(
+        analysis_result=result,
+        code=code,
+        language=language,
+        retriever=retriever,
+    )
+
