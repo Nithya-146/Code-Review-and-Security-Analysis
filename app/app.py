@@ -1,17 +1,23 @@
 """
-AI Code Review & Security Analysis Agent — Streamlit UI (Milestone 2).
+AI Code Review & Security Analysis Agent — Streamlit Developer Portal (Milestone 3).
 
-Single-page layout (no sidebar):
-  1. Header banner
-  2. Code input  (language selector + file upload / paste + Analyze button)
-  3. Severity summary  (metric cards + bar chart)
-  4. Findings table   (severity badge + title + line + agent + confidence)
-  5. Finding details  (one expander per finding)
-
-Redesigned with a pure-black / deep-navy / bright-blue theme.
+Preserves the Milestone 2 pure-black / deep-navy / bright-blue design and extends it with:
+  1. Quick sample code loaders (vulnerable Python & Java samples)
+  2. Pipeline progress indicator & friendly validation/error handling
+  3. 4-tab layout persisted in st.session_state:
+     - Overview: Color-coded Code Health Score gauge, verified fixes count, severity breakdown,
+       donut/bar charts, PR executive overview, and top risks
+     - Findings: Severity/agent/category/text filters, sorted finding expanders with side-by-side
+       Before/After remediations, verification badges, KB references, and line-highlighted code viewer
+     - PR Summary: Prioritized fix action table, Markdown/JSON/HTML downloads, full PR markdown report
+     - Ask the Assistant: Conversational RAG assistant with session history, grounding indicator,
+       expandable KB citations, starter prompts, follow-up buttons, and Clear Chat control
 """
 
+import html
+import logging
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -44,16 +50,30 @@ import streamlit as st
 try:
     from app.python_parser import validate_python
     from app.java_parser import validate_java
-    from app.schemas import AnalysisResult, Finding, OWASPCategory, ReviewReport, SeverityLevel
+    from app.schemas import (
+        AnalysisResult,
+        ChatMessage,
+        Finding,
+        OWASPCategory,
+        ReviewReport,
+        SeverityLevel,
+    )
 except (ImportError, ModuleNotFoundError):
     from python_parser import validate_python
     from java_parser import validate_java
-    from schemas import AnalysisResult, Finding, OWASPCategory, ReviewReport, SeverityLevel
+    from schemas import (
+        AnalysisResult,
+        ChatMessage,
+        Finding,
+        OWASPCategory,
+        ReviewReport,
+        SeverityLevel,
+    )
 
 try:
-    from agents.orchestrator import analyze
+    from agents.orchestrator import analyze, create_chat_assistant
 except (ImportError, ModuleNotFoundError):
-    from orchestrator import analyze
+    from orchestrator import analyze, create_chat_assistant
 
 try:
     from app.report import (
@@ -68,22 +88,63 @@ except (ImportError, ModuleNotFoundError):
         generate_html_report,
     )
 
-# ── constants ───────────────────────────────────────────────────────────────
-MAX_FILE_SIZE_BYTES: int = 1 * 1024 * 1024  # 1 MB
+try:
+    from app.ui_components import (
+        MAX_FILE_SIZE_BYTES,
+        SEV_COLORS,
+        badge_html,
+        build_code_viewer_html,
+        build_health_gauge_svg,
+        build_prioritized_fixes_table_html,
+        build_severity_donut_svg,
+        export_pr_markdown,
+        export_results_json,
+        extract_severity_str,
+        filter_findings,
+        get_health_grade,
+        get_health_score_color,
+        get_severity_counts,
+        get_verified_remediation_counts,
+        grounding_badge_html,
+        load_sample_code,
+        map_remediations_by_finding,
+        sort_findings,
+        validate_submission_input,
+        verified_badge_html,
+    )
+except (ImportError, ModuleNotFoundError):
+    from ui_components import (
+        MAX_FILE_SIZE_BYTES,
+        SEV_COLORS,
+        badge_html,
+        build_code_viewer_html,
+        build_health_gauge_svg,
+        build_prioritized_fixes_table_html,
+        build_severity_donut_svg,
+        export_pr_markdown,
+        export_results_json,
+        extract_severity_str,
+        filter_findings,
+        get_health_grade,
+        get_health_score_color,
+        get_severity_counts,
+        get_verified_remediation_counts,
+        grounding_badge_html,
+        load_sample_code,
+        map_remediations_by_finding,
+        sort_findings,
+        validate_submission_input,
+        verified_badge_html,
+    )
+
+logger = logging.getLogger(__name__)
 
 # Human-readable agent names shown in the UI
 AGENT_DISPLAY: Dict[str, str] = {
     "security_analysis": "Security Agent",
     "code_analysis": "Code Analysis Agent",
-}
-
-# Colours per severity (dark-theme readable)
-SEV_COLORS: Dict[str, str] = {
-    "CRITICAL": "#EF4444",  # red
-    "HIGH":     "#F97316",  # orange
-    "MEDIUM":   "#EAB308",  # amber
-    "LOW":      "#3B82F6",  # blue
-    "INFO":     "#6B7280",  # gray
+    "remediation_agent": "Remediation Agent",
+    "pr_summary_agent": "PR Summary Agent",
 }
 
 # ── page config ─────────────────────────────────────────────────────────────
@@ -160,6 +221,25 @@ header[data-testid="stHeader"]            { display: none; }
     margin-top: 0.2rem;
 }
 
+/* ── overview summary & risk cards ───────────────────────────────────── */
+.overview-card {
+    background-color: #07101F;
+    border: 1px solid #1E3A5F;
+    border-radius: 10px;
+    padding: 1.15rem 1.3rem;
+    margin-bottom: 0.85rem;
+}
+.risk-item {
+    background-color: #050B14;
+    border: 1px solid #1E3A5F;
+    border-left: 3px solid #EF4444;
+    border-radius: 6px;
+    padding: 0.65rem 0.9rem;
+    margin-bottom: 0.5rem;
+    color: #CBD5E1;
+    font-size: 0.88rem;
+}
+
 /* ── severity badges ─────────────────────────────────────────────────── */
 .badge {
     display: inline-block;
@@ -211,9 +291,30 @@ header[data-testid="stHeader"]            { display: none; }
     color: #94A3B8;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    margin: 1.6rem 0 0.8rem;
+    margin: 1.4rem 0 0.8rem;
     border-bottom: 1px solid #1E3A5F;
     padding-bottom: 0.4rem;
+}
+
+/* ── tabs ────────────────────────────────────────────────────────────── */
+div[data-baseweb="tab-list"] {
+    gap: 0.5rem;
+    border-bottom: 1px solid #1E3A5F;
+    padding-bottom: 0.25rem;
+}
+button[data-baseweb="tab"] {
+    background-color: #07101F !important;
+    border: 1px solid #1E3A5F !important;
+    border-radius: 6px 6px 0 0 !important;
+    color: #94A3B8 !important;
+    padding: 0.45rem 1.1rem !important;
+    font-weight: 600 !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    background-color: #0D1F3C !important;
+    color: #E6EDF7 !important;
+    border-color: #3B82F6 !important;
+    border-bottom: 2px solid #3B82F6 !important;
 }
 
 /* ── primary button ──────────────────────────────────────────────────── */
@@ -248,6 +349,13 @@ header[data-testid="stHeader"]            { display: none; }
     color: #94A3B8;
     margin-bottom: 0.75rem;
 }
+.rem-card {
+    background: #050B14;
+    border: 1px solid #1E3A5F;
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    margin: 0.65rem 0;
+}
 .kb-quote {
     border-left: 3px solid #3B82F6;
     background: #07101F;
@@ -261,7 +369,7 @@ header[data-testid="stHeader"]            { display: none; }
 """, unsafe_allow_html=True)
 
 
-# ── helpers ─────────────────────────────────────────────────────────────────
+# ── cached resources & helpers ──────────────────────────────────────────────
 
 @st.cache_resource
 def _get_retriever():
@@ -270,31 +378,35 @@ def _get_retriever():
     return retriever_singleton()
 
 
+def _safe_get_retriever() -> Optional[Any]:
+    """Returns cached KB retriever instance, or None if unavailable offline."""
+    try:
+        return _get_retriever()
+    except Exception:
+        return None
+
+
 def _warm_retriever() -> None:
     """Call at startup so the first submit does not pay the cold-start cost."""
-    try:
-        _get_retriever()
-    except Exception:
-        pass  # KB unavailable; SecurityAgent runs without RAG evidence.
+    _safe_get_retriever()
 
 
-def _severity_str(finding: Dict[str, Any]) -> str:
-    """Extracts a plain severity string from a finding dict."""
-    raw = finding.get("severity", "INFO")
-    return raw.value if hasattr(raw, "value") else str(raw).split(".")[-1]
+def _severity_str(finding: Any) -> str:
+    """Extracts a plain uppercase severity string from a finding dict or object."""
+    return extract_severity_str(finding)
 
 
 def _badge_html(sev: str) -> str:
     """Returns an HTML severity badge."""
-    return f"<span class='badge badge-{sev}'>{sev}</span>"
+    return badge_html(sev)
 
 
-def _metric_card(label: str, value: int, color: str) -> str:
+def _metric_card(label: str, value: Any, color: str) -> str:
     """Returns HTML for a coloured metric card."""
     return (
         f"<div class='metric-card' style='--sev-color:{color};'>"
-        f"<div class='metric-val'>{value}</div>"
-        f"<div class='metric-lbl'>{label}</div>"
+        f"<div class='metric-val'>{html.escape(str(value))}</div>"
+        f"<div class='metric-lbl'>{html.escape(str(label))}</div>"
         f"</div>"
     )
 
@@ -306,19 +418,12 @@ def _clean_evidence_excerpt(raw: str, max_sentences: int = 3) -> str:
     Strips leading source prefix (e.g. '[A05_injection.md]: '),
     removes markdown heading markers (#), and trims whitespace.
     """
-    # strip leading "[source]: " prefix
     if "]: " in raw:
         raw = raw.split("]: ", 1)[1]
 
-    # remove markdown headings
-    import re
     raw = re.sub(r"^#+\s*", "", raw, flags=re.MULTILINE)
-
-    # split into sentences and take first max_sentences
-    import re as _re
-    sentences = _re.split(r"(?<=[.!?])\s+", raw.strip())
-    excerpt = " ".join(s.strip() for s in sentences[:max_sentences] if s.strip())
-    return excerpt
+    sentences = re.split(r"(?<=[.!?])\s+", raw.strip())
+    return " ".join(s.strip() for s in sentences[:max_sentences] if s.strip())
 
 
 def _source_from_evidence(raw: str) -> str:
@@ -337,13 +442,757 @@ def _owasp_display(val: Any) -> str:
     if val is None:
         return ""
     raw = val.value if hasattr(val, "value") else str(val)
-    # raw format: "A08:2025-Software or Data Integrity Failures"
-    return raw.replace("-", " ", 1)  # replace only the first dash
+    return raw.replace("-", " ", 1)
 
 
 def _agent_display(agent: str) -> str:
     """Returns a human-readable agent name."""
     return AGENT_DISPLAY.get(agent, agent.replace("_", " ").title())
+
+
+# ── sample & chat callbacks ─────────────────────────────────────────────────
+
+def _load_python_sample_cb() -> None:
+    """Loads vulnerable Python sample code into session state before widget render."""
+    sample_code, sample_name = load_sample_code("python", project_root=PROJECT_ROOT)
+    st.session_state["lang_select"] = "Python"
+    st.session_state["input_mode_radio"] = "Paste code"
+    st.session_state["paste_area"] = sample_code
+    st.session_state["sample_filename"] = sample_name
+    st.session_state["sample_code_ref"] = sample_code
+
+
+def _load_java_sample_cb() -> None:
+    """Loads vulnerable Java sample code into session state before widget render."""
+    sample_code, sample_name = load_sample_code("java", project_root=PROJECT_ROOT)
+    st.session_state["lang_select"] = "Java"
+    st.session_state["input_mode_radio"] = "Paste code"
+    st.session_state["paste_area"] = sample_code
+    st.session_state["sample_filename"] = sample_name
+    st.session_state["sample_code_ref"] = sample_code
+
+
+def _queue_chat_question(question: str) -> None:
+    """Queues a starter or follow-up question for immediate execution."""
+    st.session_state["pending_chat_question"] = question
+
+
+def _clear_chat_cb() -> None:
+    """Clears conversation history and any pending chat question."""
+    st.session_state["chat_history"] = []
+    st.session_state.pop("pending_chat_question", None)
+
+
+# ── pipeline runner ─────────────────────────────────────────────────────────
+
+def _execute_analysis_pipeline(
+    code: str,
+    lang_key: str,
+    upload_filename: str,
+    upload_error: Optional[str] = None,
+) -> None:
+    """Validates input, executes the multi-agent pipeline with progress feedback, and caches results."""
+    if upload_error:
+        st.error(upload_error)
+        return
+
+    is_ok, val_err = validate_submission_input(code, lang_key)
+    if not is_ok:
+        st.warning(val_err or "⚠️ Nothing to analyze. Please upload or paste valid code first.")
+        return
+
+    progress_bar = st.progress(10, text="Validating submission syntax…")
+    try:
+        vr = validate_python(code) if lang_key == "python" else validate_java(code)
+    except Exception as exc:
+        progress_bar.empty()
+        logger.exception("Unexpected error during syntax validation")
+        st.error(
+            f"❌ Could not validate source syntax ({type(exc).__name__}). "
+            "Please verify the uploaded code matches the selected language."
+        )
+        return
+
+    if not vr.get("is_valid", False):
+        progress_bar.empty()
+        st.error("❌ Syntax error — please fix before running analysis.")
+        st.error(vr.get("error", "Unknown syntax error."))
+        return
+
+    try:
+        sub_id = f"SUB-{uuid.uuid4().hex[:8].upper()}"
+        report = ReviewReport(
+            submission_id=sub_id,
+            language=lang_key,
+            is_valid_syntax=True,
+            ast_metadata=vr.get("metadata", {}),
+            security_findings=[],
+            quality_findings=[],
+            remediations=[],
+            pr_summary_markdown=None,
+        )
+
+        progress_bar.progress(35, text="Running parallel Code Analysis & Security agents…")
+        result: AnalysisResult = analyze(
+            code,
+            language=lang_key,
+            filename=upload_filename,
+        )
+
+        progress_bar.progress(80, text="Finalizing remediations, PR summary & assistant context…")
+        report.findings = result.findings
+        report.remediations = result.remediations
+        if result.pr_summary:
+            report.pr_summary_markdown = result.pr_summary.markdown
+
+        st.session_state["analysis_result"] = result.model_dump()
+        st.session_state["review_report"] = report.model_dump()
+        st.session_state["current_code"] = code
+        st.session_state["lang_key"] = lang_key
+        st.session_state["upload_filename"] = upload_filename
+        st.session_state["chat_history"] = []
+        st.session_state.pop("pending_chat_question", None)
+
+        progress_bar.progress(100, text="Analysis complete!")
+        progress_bar.empty()
+
+        for agent_name, status in result.run_status.items():
+            if status != "SUCCESS":
+                friendly_msg = str(status).splitlines()[0][:180]
+                st.warning(f"⚠️ **{_agent_display(agent_name)}**: {friendly_msg}")
+
+        st.success(f"✅ Analysis complete — {len(result.findings)} finding(s) found in `{upload_filename}`.")
+    except Exception as exc:
+        progress_bar.empty()
+        logger.exception("Code review pipeline failed unexpectedly")
+        st.error(
+            f"⚠️ Analysis pipeline encountered an unexpected error ({type(exc).__name__}). "
+            "Please check your code input and try again."
+        )
+
+
+# ── tab renderers ───────────────────────────────────────────────────────────
+
+def _render_overview_tab(
+    res: Dict[str, Any],
+    report_data: Dict[str, Any],
+) -> None:
+    """Renders Tab 1: Health Score gauge, verified fix count, severity metrics/charts, PR overview."""
+    findings: List[Dict[str, Any]] = res.get("findings", [])
+    remediations: List[Dict[str, Any]] = res.get("remediations", [])
+    pr_summary: Optional[Dict[str, Any]] = res.get("pr_summary")
+    hs: Optional[Dict[str, Any]] = res.get("health_score")
+
+    sev_counts = get_severity_counts(findings)
+    verified_cnt, total_rem_cnt = get_verified_remediation_counts(remediations)
+
+    if isinstance(hs, dict) and "score" in hs:
+        score = int(hs.get("score", 100))
+        grade = str(hs.get("grade", get_health_grade(score)))
+    else:
+        score = 100 if not findings else max(0, 100 - len(findings) * 5)
+        grade = get_health_grade(score)
+
+    score_color = get_health_score_color(score)
+
+    # ── Top Row: Gauge + Executive Overview & Top Risks ───────────────────
+    col_gauge, col_summary = st.columns([1, 2])
+
+    with col_gauge:
+        st.markdown(build_health_gauge_svg(score, grade), unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if total_rem_cnt > 0:
+            rem_color = "#10B981" if verified_cnt == total_rem_cnt else "#EAB308"
+            rem_label = f"{verified_cnt} of {total_rem_cnt} fixes verified"
+        elif not findings:
+            rem_color = "#10B981"
+            rem_label = "0 of 0 fixes verified (Clean)"
+        else:
+            rem_color = "#64748B"
+            rem_label = "0 automated fixes available"
+
+        st.markdown(
+            f"<div class='metric-card' style='--sev-color:{rem_color};padding:0.85rem;'>"
+            f"<div style='font-size:1.15rem;font-weight:700;color:{rem_color};'>{html.escape(rem_label)}</div>"
+            f"<div class='metric-lbl'>Automated Remediation Verification</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    with col_summary:
+        r_level = report_data.get("risk_level", "Low")
+        r_badge_cls = "badge-CLEAN" if r_level == "No issues found" else f"badge-{r_level.upper()}"
+
+        exec_text = (
+            pr_summary.get("executive_overview")
+            if isinstance(pr_summary, dict) and pr_summary.get("executive_overview")
+            else report_data.get("risk_reason", "")
+        )
+
+        st.markdown(
+            f"<div class='overview-card' style='border-left:4px solid {score_color};'>"
+            f"<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.55rem;'>"
+            f"<strong style='color:#E6EDF7;font-size:1rem;'>Executive Overview</strong>"
+            f"<span class='badge {r_badge_cls}'>Risk: {html.escape(str(r_level).upper())}</span>"
+            f"</div>"
+            f"<p style='color:#CBD5E1;font-size:0.92rem;margin:0;'>{html.escape(str(exec_text))}</p>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        top_risks: List[str] = (
+            pr_summary.get("top_risks", [])
+            if isinstance(pr_summary, dict)
+            else []
+        )
+        st.markdown("#### ⚠️ Top Risks")
+        if top_risks:
+            for risk in top_risks:
+                st.markdown(
+                    f"<div class='risk-item'>{html.escape(str(risk))}</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("🎉 No critical or high-severity risks detected.")
+
+    # ── File metadata strip (preserved from Milestone 2) ──────────────────
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Target File", report_data["filename"])
+    with m2:
+        st.metric("Language", str(report_data["language"]).capitalize())
+    with m3:
+        st.metric("Lines of Code", report_data["lines_of_code"])
+    with m4:
+        st.metric("Total Findings", report_data["total_findings"])
+
+    # ── Severity Breakdown Metric Cards ───────────────────────────────────
+    st.markdown("<div class='section-title'>Severity Breakdown</div>", unsafe_allow_html=True)
+    cols = st.columns(6)
+    cards = [
+        ("CRITICAL", sev_counts["CRITICAL"], SEV_COLORS["CRITICAL"]),
+        ("HIGH",     sev_counts["HIGH"],     SEV_COLORS["HIGH"]),
+        ("MEDIUM",   sev_counts["MEDIUM"],   SEV_COLORS["MEDIUM"]),
+        ("LOW",      sev_counts["LOW"],      SEV_COLORS["LOW"]),
+        ("INFO",     sev_counts["INFO"],     SEV_COLORS["INFO"]),
+        ("TOTAL",    sev_counts["TOTAL"],    "#3B82F6"),
+    ]
+    for col, (label, val, color) in zip(cols, cards):
+        with col:
+            st.markdown(_metric_card(label, val, color), unsafe_allow_html=True)
+
+    # ── Severity Visualizations (Donut + Bar Chart) ───────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_donut, col_bar = st.columns([1, 1])
+    with col_donut:
+        st.markdown(build_severity_donut_svg(sev_counts), unsafe_allow_html=True)
+    with col_bar:
+        non_zero = {
+            k: sev_counts[k]
+            for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+            if sev_counts.get(k, 0) > 0
+        }
+        if non_zero:
+            st.bar_chart(non_zero, color="#3B82F6")
+        else:
+            st.success("🎉 No issues found — code is clean.")
+
+
+def _render_findings_tab(
+    res: Dict[str, Any],
+    code_text: str,
+    display_lang: str,
+) -> None:
+    """Renders Tab 2: Filters, sorted findings expanders with Before/After diffs, highlighted viewer."""
+    findings: List[Dict[str, Any]] = res.get("findings", [])
+    remediations: List[Dict[str, Any]] = res.get("remediations", [])
+    rem_map = map_remediations_by_finding(remediations)
+
+    if not findings:
+        st.success("🎉 No security vulnerabilities or code quality issues were detected.")
+        if code_text.strip():
+            st.markdown("<div class='section-title'>Submitted Code Viewer</div>", unsafe_allow_html=True)
+            st.markdown(build_code_viewer_html(code_text, []), unsafe_allow_html=True)
+        return
+
+    sev_counts = get_severity_counts(findings)
+    st.markdown("<div class='section-title'>Filter &amp; Explore Findings</div>", unsafe_allow_html=True)
+
+    f1, f2, f3, f4 = st.columns([1.2, 1.1, 1.1, 1.3])
+    with f1:
+        active_sevs = [s for s in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] if sev_counts.get(s, 0) > 0]
+        sel_sevs: List[str] = st.multiselect(
+            "Severity",
+            options=["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+            default=active_sevs,
+            key="filter_severity",
+        )
+    with f2:
+        all_agents = sorted({str(f.get("agent", "")) for f in findings if f.get("agent")})
+        sel_agents: List[str] = st.multiselect(
+            "Agent",
+            options=all_agents,
+            default=all_agents,
+            format_func=_agent_display,
+            key="filter_agent",
+        )
+    with f3:
+        all_categories = sorted({str(f.get("category", "General") or "General") for f in findings})
+        sel_cats: List[str] = st.multiselect(
+            "Category",
+            options=all_categories,
+            default=all_categories,
+            key="filter_category",
+        )
+    with f4:
+        search_query: str = st.text_input(
+            "Text search",
+            placeholder="Title, CWE, line, code…",
+            key="filter_search",
+        )
+
+    filtered = filter_findings(
+        findings,
+        severities=sel_sevs,
+        agents=sel_agents,
+        categories=sel_cats,
+        search_text=search_query,
+    )
+    displayed = sort_findings(filtered, sort_by="severity")
+    st.caption(f"Showing **{len(displayed)}** of **{len(findings)}** finding(s) (sorted by severity)")
+
+    # ── Findings Expanders ────────────────────────────────────────────────
+    for f in displayed:
+        fid = str(f.get("id", ""))
+        sev = _severity_str(f)
+        title = str(f.get("title", "Finding"))
+        l_start = int(f.get("line_start", 1) or 1)
+        l_end = int(f.get("line_end", l_start) or l_start)
+        agent_raw = str(f.get("agent", ""))
+        category = str(f.get("category", ""))
+        score = float(f.get("severity_score", 0.0) or 0.0)
+        confidence = float(f.get("confidence", 1.0) or 0.0)
+        snippet = str(f.get("code_snippet") or "")
+        explanation = str(f.get("explanation") or "")
+        suggestion = str(f.get("suggestion") or "")
+        evidence = str(f.get("evidence") or "")
+        owasp_raw = f.get("owasp_category")
+        cwe_id = str(f.get("cwe_id") or "")
+        filename = str(f.get("file") or st.session_state.get("upload_filename", ""))
+
+        line_label = f"Line {l_start}" if l_start == l_end else f"Lines {l_start}–{l_end}"
+        exp_title = f"[{sev}] {title} — {line_label} ({_agent_display(agent_raw)})"
+
+        with st.expander(exp_title, expanded=False):
+            st.markdown(
+                f"{_badge_html(sev)} &nbsp; <span class='finding-header'>{html.escape(title)}</span> &nbsp;"
+                f"<span style='color:#64748B;font-size:0.82rem'>{html.escape(line_label)}"
+                f"{' · ' + html.escape(filename) if filename else ''}</span>",
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(
+                f"<div class='finding-meta'>"
+                f"ID: <strong style='color:#E6EDF7'>{html.escape(fid or 'N/A')}</strong> &nbsp;|&nbsp; "
+                f"Agent: <strong style='color:#E6EDF7'>{html.escape(_agent_display(agent_raw))}</strong> &nbsp;|&nbsp; "
+                f"Category: <strong style='color:#E6EDF7'>{html.escape(category or 'General')}</strong> &nbsp;|&nbsp; "
+                f"CVSS Score: <strong style='color:#E6EDF7'>{score:.1f}</strong> &nbsp;|&nbsp; "
+                f"Confidence: <strong style='color:#E6EDF7'>{confidence:.0%}</strong>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            owasp_text = _owasp_display(owasp_raw)
+            if owasp_text or cwe_id:
+                parts = []
+                if owasp_text:
+                    parts.append(f"**OWASP:** {owasp_text}")
+                if cwe_id:
+                    parts.append(f"**CWE:** {cwe_id}")
+                st.markdown("  &nbsp;|&nbsp;  ".join(parts))
+
+            if explanation.strip():
+                st.markdown("**Description:**")
+                st.write(explanation)
+
+            rem = rem_map.get(fid)
+            if rem:
+                is_verified = bool(rem.get("verified", False))
+                ver_note = str(rem.get("verification_note", "")).strip()
+                rem_conf = float(rem.get("confidence", 0.0) or 0.0)
+                fix_summary = str(rem.get("fix_summary", "")).strip()
+                rem_expl = str(rem.get("explanation", "")).strip()
+                orig_code = str(rem.get("original_code") or snippet or "").strip()
+                corr_code = str(rem.get("corrected_code") or "").strip()
+                best_practice = str(rem.get("best_practice") or "").strip()
+                kb_refs: List[str] = list(rem.get("references") or [])
+
+                st.markdown("<div class='section-title' style='margin-top:0.8rem;'>Automated Remediation</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='rem-card'>"
+                    f"{verified_badge_html(is_verified)} &nbsp; "
+                    f"<span style='color:#94A3B8;font-size:0.82rem;'>Fix Confidence: "
+                    f"<strong style='color:#E6EDF7;'>{rem_conf:.0%}</strong></span><br>"
+                    f"<span style='color:#CBD5E1;font-size:0.85rem;display:inline-block;margin-top:0.4rem;'>"
+                    f"<strong>Verification Note:</strong> {html.escape(ver_note or 'Completed')}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                if rem_expl and rem_expl.lower() != explanation.strip().lower():
+                    st.markdown("**Why It Is a Problem:**")
+                    st.write(rem_expl)
+
+                if fix_summary:
+                    st.markdown(f"**Fix Summary:** {fix_summary}")
+
+                if orig_code or corr_code:
+                    col_b, col_a = st.columns(2)
+                    with col_b:
+                        st.markdown("**❌ Before (Vulnerable Code)**")
+                        st.code(orig_code or "# See highlighted lines below", language=display_lang)
+                    with col_a:
+                        st.markdown("**✅ After (Recommended Fix)**")
+                        st.code(corr_code or "# Manual remediation required", language=display_lang)
+
+                if best_practice:
+                    st.markdown("**💡 Best Practice:**")
+                    st.info(best_practice)
+
+                if kb_refs:
+                    ref_list = ", ".join(f"`{r}`" for r in kb_refs)
+                    st.markdown(f"**📚 Knowledge Base References:** {ref_list}")
+            else:
+                if snippet.strip():
+                    st.markdown("**Code snippet:**")
+                    st.code(snippet, language=display_lang)
+                if suggestion.strip():
+                    st.markdown("**Suggested fix:**")
+                    st.info(suggestion)
+
+            if evidence.strip() and not (rem and rem.get("references")):
+                src = _source_from_evidence(evidence)
+                excerpt = _clean_evidence_excerpt(evidence)
+                st.markdown(f"**Knowledge base — `{src}`:**")
+                st.markdown(f"<div class='kb-quote'>{html.escape(excerpt)}</div>", unsafe_allow_html=True)
+
+    # ── Highlighted Vulnerable Lines Code Viewer ──────────────────────────
+    st.markdown(
+        "<div class='section-title'>Source Code Viewer — Highlighted Vulnerable Lines</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Highlighting line matches for {len(displayed)} currently visible finding(s).")
+    st.markdown(build_code_viewer_html(code_text, displayed), unsafe_allow_html=True)
+
+
+def _render_pr_summary_tab(
+    res: Dict[str, Any],
+    report_data: Dict[str, Any],
+) -> None:
+    """Renders Tab 3: Prioritized fix list table, download buttons, and PR markdown report."""
+    pr_summary: Optional[Dict[str, Any]] = res.get("pr_summary")
+    prioritized_fixes: List[Dict[str, Any]] = (
+        pr_summary.get("prioritized_fixes", [])
+        if isinstance(pr_summary, dict)
+        else []
+    )
+
+    st.markdown("<div class='section-title'>Prioritized Action Plan</div>", unsafe_allow_html=True)
+    st.markdown(build_prioritized_fixes_table_html(prioritized_fixes), unsafe_allow_html=True)
+
+    # ── Export Downloads ──────────────────────────────────────────────────
+    st.markdown("<div class='section-title'>Export Reports</div>", unsafe_allow_html=True)
+    pr_md_text = export_pr_markdown(res)
+    json_results_text = export_results_json(res)
+    html_report_text = generate_html_report(report_data)
+    base_name = Path(str(report_data.get("filename", "submission"))).stem
+
+    col_dl1, col_dl2, col_dl3 = st.columns(3)
+    with col_dl1:
+        st.download_button(
+            label="📄 Download Markdown Report (.md)",
+            data=pr_md_text,
+            file_name=f"pr_summary_{base_name}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key="dl_pr_markdown",
+        )
+    with col_dl2:
+        st.download_button(
+            label="📦 Download Full Results (.json)",
+            data=json_results_text,
+            file_name=f"analysis_results_{base_name}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="dl_full_json",
+        )
+    with col_dl3:
+        st.download_button(
+            label="🌐 Download HTML Report (.html)",
+            data=html_report_text,
+            file_name=f"report_{base_name}.html",
+            mime="text/html",
+            use_container_width=True,
+            key="dl_html_report",
+        )
+
+    # ── Rendered PR-Style Markdown Report ─────────────────────────────────
+    st.markdown("<div class='section-title'>Pull Request Review Report</div>", unsafe_allow_html=True)
+    st.markdown(pr_md_text)
+
+    # ── Milestone 2 Detailed Security & Quality Tables ────────────────────
+    with st.expander("📊 Detailed OWASP Security & Code Quality Tables", expanded=False):
+        sec_data = report_data.get("security_summary", {})
+        qual_data = report_data.get("quality_summary", {})
+        col_sec, col_qual = st.columns(2)
+        with col_sec:
+            st.markdown("#### 🔒 Security Summary")
+            if sec_data:
+                sec_rows = "".join(
+                    f"<tr><td>{html.escape(str(cat))}</td><td class='num-col'>{cnt}</td></tr>"
+                    for cat, cnt in sec_data.items()
+                )
+                st.markdown(
+                    f"<table class='report-table'>"
+                    f"<thead><tr><th>OWASP Category</th><th class='num-col'>Findings</th></tr></thead>"
+                    f"<tbody>{sec_rows}</tbody></table>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption("No security vulnerabilities detected.")
+
+        with col_qual:
+            st.markdown("#### 🧹 Code Quality Summary")
+            if qual_data:
+                qual_rows = "".join(
+                    f"<tr><td>{html.escape(str(cat))}</td><td class='num-col'>{cnt}</td></tr>"
+                    for cat, cnt in qual_data.items()
+                )
+                st.markdown(
+                    f"<table class='report-table'>"
+                    f"<thead><tr><th>Quality Category</th><th class='num-col'>Findings</th></tr></thead>"
+                    f"<tbody>{qual_rows}</tbody></table>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption("No code quality defects detected.")
+
+
+def _process_chat_turn(
+    question: str,
+    res: Optional[Dict[str, Any]],
+    code_text: str,
+    lang_key: str,
+) -> None:
+    """Runs ChatAssistant via create_chat_assistant and appends turn to session history."""
+    clean_q = (question or "").strip()
+    if not clean_q:
+        return
+
+    history_dicts: List[Dict[str, Any]] = st.session_state.setdefault("chat_history", [])
+    prior_messages = [
+        ChatMessage(role=m["role"], content=m["content"])
+        for m in history_dicts
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("content")
+    ]
+
+    history_dicts.append({"role": "user", "content": clean_q})
+
+    try:
+        has_analysis = isinstance(res, dict) and "findings" in res
+        if has_analysis:
+            result_obj = AnalysisResult.model_validate(res)
+        else:
+            result_obj = AnalysisResult(
+                findings=[],
+                counts_by_severity={"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0},
+                counts_by_agent={"code_analysis": 0, "security_analysis": 0},
+                language=lang_key,
+                filename="not_analyzed_yet",
+            )
+
+        assistant = create_chat_assistant(
+            result=result_obj,
+            code=code_text or "",
+            language=lang_key,
+            retriever=_safe_get_retriever(),
+        )
+        resp = assistant.ask(clean_q, history=prior_messages)
+
+        answer_text = resp.answer
+        follow_ups = list(resp.follow_up_suggestions or [])
+
+        if not has_analysis and resp.intent in ("finding_explanation", "fix_request", "summary_request"):
+            if not resp.grounded:
+                answer_text = (
+                    "No code has been analyzed yet. Please upload/paste code or load a sample above "
+                    "and click **🔍 Analyze code** to inspect findings and fixes for a specific file.\n\n"
+                    "Meanwhile, I can answer general secure coding and OWASP Top 10 questions!\n\n"
+                    + resp.answer
+                )
+                follow_ups = [
+                    "What is SQL injection and how do I prevent it?",
+                    "What are best practices for API key storage?",
+                    "What is Cross-Site Scripting (XSS)?",
+                ]
+
+        history_dicts.append(
+            {
+                "role": "assistant",
+                "content": answer_text,
+                "grounded": bool(resp.grounded),
+                "intent": str(resp.intent),
+                "related_finding_ids": list(resp.related_finding_ids or []),
+                "citations": [c.model_dump() for c in (resp.citations or [])],
+                "follow_up_suggestions": follow_ups,
+            }
+        )
+    except Exception as exc:
+        logger.exception("Conversational assistant failed to answer query")
+        history_dicts.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"⚠️ I encountered an error while answering that question ({type(exc).__name__}). "
+                    "Please try rephrasing or ask another security or code review question."
+                ),
+                "grounded": False,
+                "intent": "error",
+                "related_finding_ids": [],
+                "citations": [],
+                "follow_up_suggestions": [],
+            }
+        )
+
+
+def _render_assistant_tab(
+    res: Optional[Dict[str, Any]],
+    code_text: str,
+    lang_key: str,
+) -> None:
+    """Renders Tab 4: RAG Conversational Code Assistant with citations & follow-ups."""
+    st.session_state.setdefault("chat_history", [])
+    has_analysis = isinstance(res, dict) and "findings" in res
+    findings: List[Dict[str, Any]] = res.get("findings", []) if has_analysis else []
+
+    head_col, btn_col = st.columns([4, 1])
+    with head_col:
+        st.markdown("#### 💬 RAG Conversational Code Assistant")
+        if not has_analysis:
+            st.info(
+                "No code has been analyzed yet — upload/paste code above to ask about specific lines or fixes, "
+                "or ask general OWASP / secure coding questions right now!"
+            )
+    with btn_col:
+        st.button(
+            "🗑️ Clear chat",
+            key="clear_chat_btn",
+            on_click=_clear_chat_cb,
+            use_container_width=True,
+        )
+
+    # Process queued starter / follow-up question OR chat_input before rendering history
+    queued_prompt: Optional[str] = st.session_state.pop("pending_chat_question", None)
+    typed_prompt: Optional[str] = st.chat_input(
+        "Ask about findings, line numbers, fixes, or security best practices…",
+        key="assistant_chat_input",
+    )
+    active_prompt = queued_prompt or typed_prompt
+    if active_prompt:
+        _process_chat_turn(active_prompt, res=res, code_text=code_text, lang_key=lang_key)
+
+    chat_history: List[Dict[str, Any]] = st.session_state.get("chat_history", [])
+
+    # ── Starter Questions (only before first message) ─────────────────────
+    if not chat_history:
+        if has_analysis and findings:
+            first_line = int(findings[0].get("line_start", 1) or 1)
+            starters = [
+                "What should I fix first?",
+                f"Why is line {first_line} flagged?",
+                "How do I fix finding 1?",
+                "What is OWASP Injection best practice?",
+            ]
+        elif has_analysis:
+            starters = [
+                "Summarize the review findings",
+                "What is the Code Health Score?",
+                "What are best practices for secure error handling?",
+            ]
+        else:
+            starters = [
+                "What is SQL injection?",
+                "What are best practices for storing secrets?",
+                "Explain Cross-Site Scripting (XSS)",
+            ]
+
+        st.caption("Suggested starter questions:")
+        s_cols = st.columns(len(starters))
+        for idx, q_text in enumerate(starters):
+            with s_cols[idx]:
+                st.button(
+                    q_text,
+                    key=f"starter_{idx}",
+                    on_click=_queue_chat_question,
+                    args=(q_text,),
+                    use_container_width=True,
+                )
+
+    # ── Conversation History ──────────────────────────────────────────────
+    last_assistant_idx = max(
+        (i for i, m in enumerate(chat_history) if m.get("role") == "assistant"),
+        default=-1,
+    )
+
+    for idx, msg in enumerate(chat_history):
+        role = msg.get("role", "assistant")
+        content = msg.get("content", "")
+
+        with st.chat_message(role):
+            if role == "assistant":
+                grounded = bool(msg.get("grounded", False))
+                intent = str(msg.get("intent", "")).replace("_", " ").title()
+                st.markdown(
+                    f"{grounding_badge_html(grounded)} &nbsp; "
+                    f"<span style='color:#64748B;font-size:0.76rem;'>Intent: {html.escape(intent)}</span>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown(content)
+
+            if role == "assistant":
+                citations: List[Dict[str, Any]] = msg.get("citations") or []
+                if citations:
+                    with st.expander(f"📚 Citations ({len(citations)})", expanded=False):
+                        for cite in citations:
+                            c_src = html.escape(str(cite.get("source", "Knowledge Base")))
+                            c_sec = html.escape(str(cite.get("section", "")))
+                            c_score = float(cite.get("relevance_score", 0.0) or 0.0)
+                            c_snip = html.escape(str(cite.get("snippet", "")))
+                            sec_txt = f" · {c_sec}" if c_sec else ""
+                            st.markdown(
+                                f"<div class='kb-quote'>"
+                                f"<strong style='color:#E6EDF7;'>{c_src}</strong>"
+                                f"<span style='color:#64748B;'>{sec_txt} (score {c_score:.2f})</span><br>"
+                                f"{c_snip}"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+
+                follow_ups: List[str] = msg.get("follow_up_suggestions") or []
+                if idx == last_assistant_idx and follow_ups:
+                    st.caption("Suggested follow-ups:")
+                    f_cols = st.columns(min(3, len(follow_ups)))
+                    for s_idx, sug in enumerate(follow_ups[:3]):
+                        with f_cols[s_idx]:
+                            st.button(
+                                sug,
+                                key=f"followup_{idx}_{s_idx}",
+                                on_click=_queue_chat_question,
+                                args=(sug,),
+                                use_container_width=True,
+                            )
 
 
 # ── warm the retriever at startup ───────────────────────────────────────────
@@ -356,23 +1205,27 @@ _warm_retriever()
 st.markdown("""
 <div class="app-banner">
   <h1>🛡️ AI Code Review &amp; Security Analysis Agent</h1>
-  <p>Paste Python or Java code. Two agents check it for quality problems and
-     security vulnerabilities, then merge the results.</p>
+  <p>Submit Python or Java code for multi-agent quality &amp; vulnerability scanning,
+     self-verified automated fixes, PR health scoring, and RAG-grounded Q&amp;A.</p>
 </div>
 """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SECTION 2 — CODE INPUT
+# SECTION 2 — CODE INPUT & SAMPLE LOADER
 # ═══════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='section-title'>Code Input</div>", unsafe_allow_html=True)
+
+st.session_state.setdefault("lang_select", "Python")
+st.session_state.setdefault("input_mode_radio", "Upload file")
 
 col_lang, col_mode = st.columns([1, 3])
 with col_lang:
     language_choice: str = st.selectbox(
         "Language",
         ["Python", "Java"],
-        help="Auto-detected from uploaded file extension; override if needed.",
+        key="lang_select",
+        help="Auto-detected from uploaded file extension or loaded sample; override if needed.",
     )
 lang_key: str = "python" if language_choice == "Python" else "java"
 
@@ -382,23 +1235,49 @@ with col_mode:
         ["Upload file", "Paste code"],
         horizontal=True,
         label_visibility="collapsed",
+        key="input_mode_radio",
+    )
+
+# Sample Code Loader
+sample_col1, sample_col2, _ = st.columns([1.4, 1.4, 2.2])
+with sample_col1:
+    st.button(
+        "🐍 Load vulnerable Python sample",
+        key="load_py_sample_btn",
+        on_click=_load_python_sample_cb,
+        use_container_width=True,
+    )
+with sample_col2:
+    st.button(
+        "☕ Load vulnerable Java sample",
+        key="load_java_sample_btn",
+        on_click=_load_java_sample_cb,
+        use_container_width=True,
     )
 
 uploaded_code: Optional[str] = None
 upload_filename: str = f"submission.{'py' if lang_key == 'python' else 'java'}"
+upload_error_msg: Optional[str] = None
 
 if input_mode == "Upload file":
     uploaded_file = st.file_uploader(
         "Upload a .py or .java file (max 1 MB)",
         type=["py", "java"],
+        key="file_uploader_widget",
     )
     if uploaded_file is not None:
         if uploaded_file.size > MAX_FILE_SIZE_BYTES:
-            st.error(f"❌ File exceeds 1 MB ({uploaded_file.size / 1024 / 1024:.2f} MB).")
+            upload_error_msg = (
+                f"❌ File exceeds 1 MB ({uploaded_file.size / 1024 / 1024:.2f} MB)."
+            )
+            st.error(upload_error_msg)
         else:
             ext = Path(uploaded_file.name).suffix.lower()
             if ext not in (".py", ".java"):
-                st.error(f"❌ Unsupported extension '{ext}'. Only .py and .java are accepted.")
+                upload_error_msg = (
+                    f"❌ Unsupported extension '{ext}'. Only .py and .java are accepted."
+                )
+                st.error(upload_error_msg)
             else:
                 lang_key = "python" if ext == ".py" else "java"
                 upload_filename = uploaded_file.name
@@ -418,10 +1297,12 @@ else:
     )
     if pasted.strip():
         uploaded_code = pasted
-        # basic auto-detect from content
-        if any(tok in pasted for tok in ("public class", "System.out", "import java.")):
-            lang_key = "java"
-        upload_filename = f"submission.{'py' if lang_key == 'python' else 'java'}"
+        if pasted == st.session_state.get("sample_code_ref"):
+            upload_filename = st.session_state.get("sample_filename", upload_filename)
+        else:
+            if any(tok in pasted for tok in ("public class", "System.out", "import java.")):
+                lang_key = "java"
+            upload_filename = f"submission.{'py' if lang_key == 'python' else 'java'}"
 
 if uploaded_code:
     with st.expander("👀 Code preview", expanded=False):
@@ -431,344 +1312,66 @@ analyze_clicked: bool = st.button(
     "🔍 Analyze code",
     type="primary",
     use_container_width=False,
-    disabled=not bool(uploaded_code and uploaded_code.strip()),
+    key="analyze_btn",
 )
 
 if analyze_clicked:
-    if not uploaded_code or not uploaded_code.strip():
-        st.warning("⚠️ Nothing to analyse. Please upload or paste some code first.")
+    _execute_analysis_pipeline(
+        code=uploaded_code or "",
+        lang_key=lang_key,
+        upload_filename=upload_filename,
+        upload_error=upload_error_msg,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECTIONS 3 — TABBED RESULTS & CONVERSATIONAL ASSISTANT
+# ═══════════════════════════════════════════════════════════════════════════
+st.markdown("<div class='section-title'>Analysis Workspace</div>", unsafe_allow_html=True)
+
+tab_overview, tab_findings, tab_pr, tab_chat = st.tabs([
+    "📊 Overview",
+    "🔍 Findings",
+    "📋 PR Summary",
+    "💬 Ask the Assistant",
+])
+
+cached_res: Optional[Dict[str, Any]] = st.session_state.get("analysis_result")
+cached_code: str = st.session_state.get("current_code", "")
+cached_lang: str = st.session_state.get(
+    "lang_key",
+    cached_res.get("language", lang_key) if isinstance(cached_res, dict) else lang_key,
+)
+
+if isinstance(cached_res, dict) and "findings" in cached_res:
+    target_file = st.session_state.get("upload_filename", cached_res.get("filename", "unknown"))
+    loc_calc = len(cached_code.splitlines()) if cached_code else None
+    report_data = build_report_data(
+        cached_res,
+        lines_of_code=loc_calc,
+        filename=target_file,
+        language=cached_lang,
+    )
+else:
+    report_data = None
+
+with tab_overview:
+    if isinstance(cached_res, dict) and report_data is not None:
+        _render_overview_tab(cached_res, report_data)
     else:
-        # ── syntax validation ────────────────────────────────────────────
-        with st.spinner("Validating syntax…"):
-            vr = validate_python(uploaded_code) if lang_key == "python" else validate_java(uploaded_code)
+        st.info("Submit Python or Java code (or click a sample loader above) and press **🔍 Analyze code** to view the Health Score, severity breakdown, and top risks.")
 
-        if not vr["is_valid"]:
-            st.error("❌ Syntax error — please fix before running analysis.")
-            st.error(vr.get("error", "Unknown syntax error."))
-        else:
-            sub_id = f"SUB-{uuid.uuid4().hex[:8].upper()}"
-            report = ReviewReport(
-                submission_id=sub_id,
-                language=lang_key,
-                is_valid_syntax=True,
-                ast_metadata=vr.get("metadata", {}),
-                security_findings=[],
-                quality_findings=[],
-                remediations=[],
-                pr_summary_markdown=None,
-            )
-            st.session_state["review_report"] = report.model_dump()
-            st.session_state["current_code"] = uploaded_code
-            st.session_state["lang_key"] = lang_key
+with tab_findings:
+    if isinstance(cached_res, dict):
+        _render_findings_tab(cached_res, code_text=cached_code, display_lang=cached_lang)
+    else:
+        st.info("Findings, side-by-side Before/After fixes, verification badges, and vulnerable line highlights will appear here after analysis.")
 
-            # ── run orchestrator ─────────────────────────────────────────
-            with st.spinner("Running parallel agent analysis…"):
-                result: AnalysisResult = analyze(
-                    uploaded_code, language=lang_key, filename=upload_filename
-                )
-                report.findings = result.findings
-                st.session_state["analysis_result"] = result.model_dump()
-                st.session_state["review_report"] = report.model_dump()
-                st.session_state["upload_filename"] = upload_filename
+with tab_pr:
+    if isinstance(cached_res, dict) and report_data is not None:
+        _render_pr_summary_tab(cached_res, report_data)
+    else:
+        st.info("Prioritized action plan, PR review markdown report, and downloadable exports will appear here after analysis.")
 
-            # show agent errors if any
-            for agent_name, status in result.run_status.items():
-                if status != "SUCCESS":
-                    st.warning(f"⚠️ **{_agent_display(agent_name)}**: {status}")
-
-            st.success(f"✅ Analysis complete — {len(result.findings)} finding(s) found.")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SECTIONS 3-5 — RESULTS (only when we have findings in session state)
-# ═══════════════════════════════════════════════════════════════════════════
-if "analysis_result" not in st.session_state:
-    st.stop()
-
-res: Dict[str, Any] = st.session_state["analysis_result"]
-findings: List[Dict[str, Any]] = res.get("findings", [])
-counts_sev: Dict[str, int] = res.get("counts_by_severity", {})
-run_status: Dict[str, str] = res.get("run_status", {})
-display_lang: str = st.session_state.get("lang_key", res.get("language", "python"))
-
-# ── section 3: severity summary ─────────────────────────────────────────────
-st.markdown("<div class='section-title'>Severity Summary</div>", unsafe_allow_html=True)
-
-total = sum(counts_sev.values())
-c_crit = counts_sev.get("CRITICAL", 0)
-c_high = counts_sev.get("HIGH", 0)
-c_med  = counts_sev.get("MEDIUM", 0)
-c_low  = counts_sev.get("LOW", 0)
-c_info = counts_sev.get("INFO", 0)
-
-cols = st.columns(6)
-cards = [
-    ("CRITICAL", c_crit, SEV_COLORS["CRITICAL"]),
-    ("HIGH",     c_high, SEV_COLORS["HIGH"]),
-    ("MEDIUM",   c_med,  SEV_COLORS["MEDIUM"]),
-    ("LOW",      c_low,  SEV_COLORS["LOW"]),
-    ("INFO",     c_info, SEV_COLORS["INFO"]),
-    ("TOTAL",    total,  "#3B82F6"),
-]
-for col, (label, val, color) in zip(cols, cards):
-    with col:
-        st.markdown(_metric_card(label, val, color), unsafe_allow_html=True)
-
-if findings:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.bar_chart(
-        {k: v for k, v in counts_sev.items() if v > 0},
-        color="#3B82F6",
-    )
-else:
-    st.success("🎉 No issues found — code is clean.")
-
-# ── section 4: findings table + filters ─────────────────────────────────────
-if findings:
-    st.markdown("<div class='section-title'>Findings</div>", unsafe_allow_html=True)
-
-    # ── filters ──────────────────────────────────────────────────────────
-    f1, f2 = st.columns(2)
-    with f1:
-        active_sevs = [s for s in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
-                       if counts_sev.get(s, 0) > 0]
-        sel_sevs: List[str] = st.multiselect(
-            "Filter by severity",
-            options=["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
-            default=active_sevs,
-        )
-    with f2:
-        all_agents = sorted({f.get("agent", "") for f in findings})
-        sel_agents: List[str] = st.multiselect(
-            "Filter by agent",
-            options=all_agents,
-            default=all_agents,
-            format_func=_agent_display,
-        )
-
-    displayed = [
-        f for f in findings
-        if _severity_str(f) in sel_sevs and f.get("agent", "") in sel_agents
-    ]
-    st.caption(f"Showing {len(displayed)} of {len(findings)} findings")
-
-    # ── section 5: expander per finding ──────────────────────────────────
-    st.markdown("<div class='section-title'>Finding Details</div>", unsafe_allow_html=True)
-
-    for f in displayed:
-        sev         = _severity_str(f)
-        title       = f.get("title", "Finding")
-        l_start     = f.get("line_start", 1)
-        l_end       = f.get("line_end", l_start)
-        agent_raw   = f.get("agent", "")
-        score       = f.get("severity_score", 0.0)
-        confidence  = f.get("confidence", 1.0)
-        snippet     = f.get("code_snippet") or ""
-        explanation = f.get("explanation") or ""
-        suggestion  = f.get("suggestion") or ""
-        evidence    = f.get("evidence") or ""
-        owasp_raw   = f.get("owasp_category")
-        cwe_id      = f.get("cwe_id") or ""
-        filename    = f.get("file") or st.session_state.get("upload_filename", "")
-
-        line_label = f"Line {l_start}" if l_start == l_end else f"Lines {l_start}–{l_end}"
-
-        # expander title: badge + title + line
-        exp_title = f"[{sev}] {title} — {line_label}"
-
-        with st.expander(exp_title, expanded=False):
-
-            # 1. header
-            st.markdown(
-                f"{_badge_html(sev)} &nbsp; <span class='finding-header'>{title}</span> &nbsp;"
-                f"<span style='color:#64748B;font-size:0.82rem'>{line_label}"
-                f"{' · ' + filename if filename else ''}</span>",
-                unsafe_allow_html=True,
-            )
-
-            # 2. score / confidence / agent
-            st.markdown(
-                f"<div class='finding-meta'>"
-                f"CVSS Score: <strong style='color:#E6EDF7'>{score:.1f}</strong> &nbsp;|&nbsp; "
-                f"Confidence: <strong style='color:#E6EDF7'>{confidence:.0%}</strong> &nbsp;|&nbsp; "
-                f"Agent: <strong style='color:#E6EDF7'>{_agent_display(agent_raw)}</strong>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-            # 3. OWASP + CWE
-            owasp_text = _owasp_display(owasp_raw)
-            if owasp_text or cwe_id:
-                parts = []
-                if owasp_text:
-                    parts.append(f"**OWASP:** {owasp_text}")
-                if cwe_id:
-                    parts.append(f"**CWE:** {cwe_id}")
-                st.markdown("  &nbsp;|&nbsp;  ".join(parts))
-
-            # 4. code snippet
-            if snippet.strip():
-                st.markdown("**Code snippet:**")
-                st.code(snippet, language=display_lang)
-
-            # 5. explanation
-            if explanation.strip():
-                st.markdown("**Explanation:**")
-                st.write(explanation)
-
-            # 6. suggested fix
-            if suggestion.strip():
-                st.markdown("**Suggested fix:**")
-                st.info(suggestion)
-
-            # 7. KB evidence
-            if evidence.strip():
-                src = _source_from_evidence(evidence)
-                excerpt = _clean_evidence_excerpt(evidence)
-                st.markdown(f"**Knowledge base — `{src}`:**")
-                st.markdown(
-                    f"<div class='kb-quote'>{excerpt}</div>",
-                    unsafe_allow_html=True,
-                )
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SECTION 6 — FINAL REPORT
-# ═══════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='section-title'>Final report</div>", unsafe_allow_html=True)
-
-# Build report data covering ALL findings regardless of UI table filters
-code_text = st.session_state.get("current_code", "")
-loc_calc = len(code_text.splitlines()) if code_text else None
-target_file = st.session_state.get("upload_filename", res.get("filename", "unknown"))
-target_language = st.session_state.get("lang_key", res.get("language", "python"))
-
-report_data = build_report_data(
-    res,
-    lines_of_code=loc_calc,
-    filename=target_file,
-    language=target_language,
-)
-
-# 1. Overall risk rating
-r_level = report_data["risk_level"]
-r_reason = report_data["risk_reason"]
-r_color = report_data["risk_color"]
-r_badge_cls = "badge-CLEAN" if r_level == "No issues found" else f"badge-{r_level.upper()}"
-
-st.markdown(
-    f"<div style='background-color:#07101F; border:1px solid #1E3A5F; border-left:5px solid {r_color}; "
-    f"border-radius:8px; padding:1.2rem; margin-bottom:1.4rem;'>"
-    f"<div style='display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap;'>"
-    f"<span class='badge {r_badge_cls}' style='font-size:0.95rem; padding:6px 16px;'>{r_level.upper()}</span>"
-    f"<span style='font-size:1rem; color:#E6EDF7;'>{r_reason}</span>"
-    f"</div></div>",
-    unsafe_allow_html=True,
-)
-
-# 2. File summary
-st.markdown("#### 📄 File Summary")
-f_meta1, f_meta2, f_meta3, f_meta4 = st.columns(4)
-with f_meta1:
-    st.metric("Target File", report_data["filename"])
-with f_meta2:
-    st.metric("Language", report_data["language"].capitalize())
-with f_meta3:
-    st.metric("Lines of Code", report_data["lines_of_code"])
-with f_meta4:
-    st.metric("Total Findings", report_data["total_findings"])
-
-counts_map = report_data["counts_by_severity"]
-st.caption(
-    f"**Severity Breakdown:** "
-    f"Critical: `{counts_map.get('CRITICAL', 0)}` | "
-    f"High: `{counts_map.get('HIGH', 0)}` | "
-    f"Medium: `{counts_map.get('MEDIUM', 0)}` | "
-    f"Low: `{counts_map.get('LOW', 0)}` | "
-    f"Info: `{counts_map.get('INFO', 0)}`"
-)
-
-# 3. Security summary
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown("#### 🔒 Security Summary")
-sec_data = report_data["security_summary"]
-if sec_data:
-    sec_rows = "".join(
-        f"<tr><td>{cat}</td><td class='num-col'>{cnt}</td></tr>"
-        for cat, cnt in sec_data.items()
-    )
-    st.markdown(
-        f"<table class='report-table'>"
-        f"<thead><tr><th>OWASP Category</th><th class='num-col'>Findings</th></tr></thead>"
-        f"<tbody>{sec_rows}</tbody></table>",
-        unsafe_allow_html=True,
-    )
-else:
-    st.caption("No security vulnerabilities detected.")
-
-# 4. Code quality summary
-st.markdown("#### 🧹 Code Quality Summary")
-qual_data = report_data["quality_summary"]
-if qual_data:
-    qual_rows = "".join(
-        f"<tr><td>{cat}</td><td class='num-col'>{cnt}</td></tr>"
-        for cat, cnt in qual_data.items()
-    )
-    st.markdown(
-        f"<table class='report-table'>"
-        f"<thead><tr><th>Quality Category</th><th class='num-col'>Findings</th></tr></thead>"
-        f"<tbody>{qual_rows}</tbody></table>",
-        unsafe_allow_html=True,
-    )
-else:
-    st.caption("No code quality defects detected.")
-
-# 5. Top 5 issues to fix first
-st.markdown("#### ⚠️ Top 5 Issues to Fix First")
-top_5_items = report_data["top_5"]
-if top_5_items:
-    for f in top_5_items:
-        t_sev = _severity_str(f)
-        t_title = f.get("title", "Finding") if isinstance(f, dict) else getattr(f, "title", "Finding")
-        t_start = f.get("line_start", 1) if isinstance(f, dict) else getattr(f, "line_start", 1)
-        t_end = f.get("line_end", t_start) if isinstance(f, dict) else getattr(f, "line_end", t_start)
-        t_line_str = f"Line {t_start}" if t_start == t_end else f"Lines {t_start}–{t_end}"
-        st.markdown(
-            f"<div style='margin-bottom:0.45rem; background:#07101F; padding:0.6rem 0.9rem; "
-            f"border:1px solid #1E3A5F; border-radius:6px; display:flex; align-items:center; gap:0.75rem;'>"
-            f"{_badge_html(t_sev)} <strong style='color:#E6EDF7;'>{t_title}</strong> "
-            f"<span style='color:#94A3B8; font-size:0.85rem;'>({t_line_str})</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-else:
-    st.info("No issues found to fix.")
-
-# 6. Recommended next steps
-st.markdown("#### 💡 Recommended Next Steps")
-for step in report_data["recommended_steps"]:
-    st.markdown(f"- {step}")
-
-# 7. Two download buttons
-st.markdown("<br>", unsafe_allow_html=True)
-md_report_text = generate_markdown_report(report_data)
-html_report_text = generate_html_report(report_data)
-base_name = Path(target_file).stem
-
-col_btn1, col_btn2 = st.columns(2)
-with col_btn1:
-    st.download_button(
-        label="📄 Download report (Markdown)",
-        data=md_report_text,
-        file_name=f"report_{base_name}.md",
-        mime="text/markdown",
-        use_container_width=True,
-    )
-with col_btn2:
-    st.download_button(
-        label="🌐 Download report (HTML)",
-        data=html_report_text,
-        file_name=f"report_{base_name}.html",
-        mime="text/html",
-        use_container_width=True,
-    )
-
+with tab_chat:
+    _render_assistant_tab(cached_res, code_text=cached_code, lang_key=cached_lang)
