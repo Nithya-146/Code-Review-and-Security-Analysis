@@ -1,0 +1,56 @@
+{
+  "sample_file": "TelemetryArchiveService.java",
+  "language": "java",
+  "complexity": "heldout",
+  "expected_issues": [
+    {
+      "type": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [16, 18],
+      "description": "Hardcoded Stripe-style live token in brokerAuthToken"
+    },
+    {
+      "type": "command_injection",
+      "cwe": "CWE-78",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [25, 27],
+      "description": "Command injection via ProcessBuilder('/bin/sh', '-c', ... + deviceFolder)"
+    },
+    {
+      "type": "path_traversal",
+      "cwe": "CWE-22",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [30, 32],
+      "description": "Path traversal via FileInputStream concatenation"
+    },
+    {
+      "type": "insecure_tls",
+      "cwe": "CWE-295",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [35, 41],
+      "description": "Permissive HostnameVerifier always returning true disables TLS verification"
+    },
+    {
+      "type": "broad_exception",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [46, 48],
+      "description": "Overly broad catch (Throwable ex) clause"
+    },
+    {
+      "type": "magic_number",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "LOW",
+      "line_range": [56, 58],
+      "description": "Magic number literal 3.6 in metersPerSecToKmh"
+    }
+  ]
+}
+

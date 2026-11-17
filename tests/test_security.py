@@ -496,3 +496,96 @@ def get_user(conn, uid):
     assert finding.line_end >= finding.line_start
     assert len(finding.explanation) > 10
     assert len(finding.suggestion) > 5
+
+
+# ==============================================================================
+# 7. Milestone 4 Step 2c General Detector Hardening Unit Tests
+# ==============================================================================
+
+def test_py_cmdi_subprocess_shell_true_reachable(security_agent: SecurityAgent):
+    """Verifies subprocess.run/Popen with shell=True is detected (not shadowed by os branch)."""
+    code = """
+import subprocess
+def list_dir(folder):
+    return subprocess.run("ls " + folder, shell=True)
+"""
+    findings = security_agent.run(code, language="python", filename="shell_cmd.py")
+    assert any(f.cwe_id == "CWE-78" for f in findings)
+
+
+def test_py_secrets_attribute_assignment_detected(security_agent: SecurityAgent):
+    """Verifies hardcoded secrets assigned to instance attributes (self.x) are flagged."""
+    code = """
+class ClientCfg:
+    def __init__(self):
+        self.api_secret = "xoxb-998877665544-aabbccddeeff112233"
+"""
+    findings = security_agent.run(code, language="python", filename="attr_secret.py")
+    assert any(f.cwe_id == "CWE-798" for f in findings)
+
+
+def test_py_deserial_yaml_unsafe_loader_vs_safe_loader(security_agent: SecurityAgent):
+    """Verifies yaml.UnsafeLoader is flagged while yaml.SafeLoader is allowed."""
+    bad = """
+import yaml
+def load_bad(text):
+    return yaml.load(text, Loader=yaml.UnsafeLoader)
+"""
+    good = """
+import yaml
+def load_good(text):
+    return yaml.load(text, Loader=yaml.SafeLoader)
+"""
+    assert any(f.cwe_id == "CWE-502" for f in security_agent.run(bad, language="python", filename="bad_yaml.py"))
+    assert not any(f.cwe_id == "CWE-502" for f in security_agent.run(good, language="python", filename="good_yaml.py"))
+
+
+def test_java_sqli_stringbuilder_chain_detected(security_agent: SecurityAgent):
+    """Verifies Java SQL injection built via StringBuilder.append() is flagged."""
+    code = """
+import java.sql.Statement;
+public class Repo {
+    public void find(Statement s, String name) throws Exception {
+        StringBuilder q = new StringBuilder("SELECT * FROM items WHERE name = '");
+        q.append(name).append("'");
+        s.executeQuery(q.toString());
+    }
+}
+"""
+    findings = security_agent.run(code, language="java", filename="Repo.java")
+    assert any(f.cwe_id == "CWE-89" for f in findings)
+
+
+def test_java_tls_anonymous_hostname_verifier_and_lambda(security_agent: SecurityAgent):
+    """Verifies Java anonymous HostnameVerifier returning true and lambda -> true are flagged."""
+    code = """
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSession;
+public class TlsBypass {
+    public void disableVerify() {
+        HttpsURLConnection.setDefaultHostnameVerifier(new HostnameVerifier() {
+            public boolean verify(String h, SSLSession s) { return true; }
+        });
+    }
+}
+"""
+    findings = security_agent.run(code, language="java", filename="TlsBypass.java")
+    assert any(f.cwe_id == "CWE-295" for f in findings)
+
+
+def test_java_csrf_ignores_comments_and_javadocs(security_agent: SecurityAgent):
+    """Verifies comments mentioning csrf().disable() do not produce false positives."""
+    code = """
+/**
+ * Never call http.csrf().disable() in production.
+ */
+public class SafeSecurity {
+    // Do not use csrf().disable() here
+    public void configure() {
+        int ok = 1;
+    }
+}
+"""
+    findings = security_agent.run(code, language="java", filename="SafeSecurity.java")
+    assert not any(f.cwe_id == "CWE-352" for f in findings)

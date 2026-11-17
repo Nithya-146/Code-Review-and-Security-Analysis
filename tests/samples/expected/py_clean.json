@@ -1,0 +1,7 @@
+{
+  "sample_file": "py_clean.py",
+  "language": "python",
+  "complexity": "clean",
+  "expected_issues": []
+}
+

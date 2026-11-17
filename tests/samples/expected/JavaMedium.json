@@ -1,0 +1,71 @@
+{
+  "sample_file": "JavaMedium.java",
+  "language": "java",
+  "complexity": "medium",
+  "expected_issues": [
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [28, 31],
+      "description": "SQL injection via Statement.executeQuery in searchReports"
+    },
+    {
+      "type": "command_injection",
+      "cwe": "CWE-78",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [34, 36],
+      "description": "Command injection via Runtime.getRuntime().exec"
+    },
+    {
+      "type": "xss",
+      "cwe": "CWE-79",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [39, 41],
+      "description": "XSS via unescaped writer.write output"
+    },
+    {
+      "type": "weak_crypto",
+      "cwe": "CWE-327",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [44, 46],
+      "description": "Weak MD5 MessageDigest usage"
+    },
+    {
+      "type": "path_traversal",
+      "cwe": "CWE-22",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [50, 52],
+      "description": "Path traversal via new File with untrusted filename"
+    },
+    {
+      "type": "deep_nesting",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [55, 77],
+      "description": "Deep control-flow nesting in evaluateApprovalMatrix"
+    },
+    {
+      "type": "too_many_parameters",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [80, 90],
+      "description": "Method buildNotificationEnvelope exceeds 5 parameters"
+    },
+    {
+      "type": "magic_number",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "LOW",
+      "line_range": [103, 105],
+      "description": "Magic number literal 47.5 in computeShippingFee"
+    }
+  ]
+}

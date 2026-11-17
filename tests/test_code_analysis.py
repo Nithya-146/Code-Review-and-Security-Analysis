@@ -562,3 +562,36 @@ def test_scoring_function():
     assert calculate_quality_score("deep_nesting", SeverityLevel.MEDIUM) == 6.0
     assert calculate_quality_score("magic_number", SeverityLevel.LOW) == 2.0
     assert calculate_quality_score("unknown_rule", SeverityLevel.INFO) == 1.0
+
+
+def test_magic_number_exempts_token_and_urandom_byte_lengths(agent: CodeAnalysisAgent):
+    """Verifies byte-length args in secrets.token_* and os.urandom are not flagged as Magic Numbers."""
+    code = '''"""Token helpers."""
+import os
+import secrets
+
+def make_keys() -> tuple:
+    """Generates random keys using standard byte lengths."""
+    return secrets.token_hex(16), secrets.token_urlsafe(24), os.urandom(32)
+'''
+    findings = agent.run(code, language="python", filename="tokens.py")
+    assert not any("Magic Number" in f.title for f in findings)
+
+
+def test_java_missing_javadoc_skips_anonymous_inner_class_methods(agent: CodeAnalysisAgent):
+    """Verifies overridden methods inside Java anonymous inner classes are not flagged for Javadoc."""
+    code = """
+/** Runner wrapper. */
+public class TaskRunner {
+    /** Builds a runnable instance. */
+    public Runnable makeTask() {
+        return new Runnable() {
+            public void run() {
+                System.out.println("done");
+            }
+        };
+    }
+}
+"""
+    findings = agent.run(code, language="java", filename="TaskRunner.java")
+    assert not any("Javadoc" in f.title for f in findings)

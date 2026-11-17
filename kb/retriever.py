@@ -20,8 +20,9 @@ Performance notes
 
 import logging
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 # Tell sentence-transformers / HuggingFace Hub to work fully offline.
 # The model is already cached locally; these env vars suppress the ~10 network
@@ -62,6 +63,48 @@ def retriever_singleton(reset: bool = False) -> "Retriever":
     if reset or _SINGLETON is None:
         _SINGLETON = Retriever()
     return _SINGLETON
+
+
+_STOP_WORDS: Set[str] = {
+    "the", "and", "for", "with", "that", "this", "from", "are", "how", "what",
+    "why", "can", "should", "using", "into", "when", "does", "not", "all",
+    "use", "your", "you", "our", "have", "has", "been", "prevent", "avoid",
+}
+
+
+def _tokenize_terms(text: str) -> Set[str]:
+    """Extracts lowercase alphanumeric domain tokens (ignoring short stop words)."""
+    tokens = re.findall(r"[a-z0-9_]+", (text or "").lower())
+    return {t for t in tokens if len(t) >= 3 and t not in _STOP_WORDS}
+
+
+def _hybrid_rerank(query: str, candidates: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
+    """
+    Lightweight hybrid reranker combining dense cosine similarity (80%) with
+    lexical token & source-title overlap (20%) to suppress cross-document noise
+    and boost exact OWASP/CWE/topic matches.
+    """
+    if not candidates:
+        return []
+    q_terms = _tokenize_terms(query)
+    if not q_terms:
+        return candidates[:k]
+
+    scored: List[tuple[float, Dict[str, Any]]] = []
+    for item in candidates:
+        dense = float(item.get("similarity_score", 0.0))
+        src_terms = _tokenize_terms(item.get("source", "").replace("_", " ").replace(".", " "))
+        doc_terms = _tokenize_terms(item.get("text", ""))
+        text_overlap = len(q_terms & doc_terms) / len(q_terms)
+        src_overlap = len(q_terms & src_terms) / len(q_terms)
+        lexical_score = min(1.0, 0.50 * text_overlap + 1.15 * src_overlap)
+        blended = min(1.0, round(0.72 * dense + 0.28 * lexical_score, 4))
+        updated = dict(item)
+        updated["similarity_score"] = max(dense, blended) if lexical_score > 0.25 else blended
+        scored.append((blended, updated))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in scored[:k]]
 
 
 class Retriever:
@@ -135,9 +178,11 @@ class Retriever:
         if category:
             where_clause = {"category": category}
 
+        total_chunks = max(1, self.collection.count())
+        fetch_k = min(max(k * 3, 10), total_chunks)
         query_params: Dict[str, Any] = {
             "query_embeddings": query_embedding,
-            "n_results": min(k, max(1, self.collection.count())),
+            "n_results": fetch_k,
             "include": ["documents", "metadatas", "distances"]
         }
         if where_clause:
@@ -145,9 +190,9 @@ class Retriever:
 
         raw_results = self.collection.query(**query_params)
 
-        results: List[Dict[str, Any]] = []
+        candidates: List[Dict[str, Any]] = []
         if not raw_results or not raw_results.get("documents"):
-            return results
+            return candidates
 
         docs = raw_results["documents"][0]
         metas = raw_results["metadatas"][0] if raw_results.get("metadatas") else [{}] * len(docs)
@@ -156,13 +201,14 @@ class Retriever:
         for doc, meta, dist in zip(docs, metas, distances):
             # For cosine distance (range 0.0 to 2.0), similarity = max(0.0, 1.0 - dist)
             similarity = max(0.0, min(1.0, 1.0 - float(dist)))
-            results.append({
+            candidates.append({
                 "text": doc,
                 "source": meta.get("source", "unknown"),
                 "category": meta.get("category", "GENERAL"),
                 "similarity_score": round(similarity, 4)
             })
 
+        results = _hybrid_rerank(query, candidates, k=k)
         logger.info("Query '%s' returned %d results (category filter=%s)", query, len(results), category)
         return results
 

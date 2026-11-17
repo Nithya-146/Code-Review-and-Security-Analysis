@@ -1,0 +1,48 @@
+{
+  "sample_file": "billing_worker.py",
+  "language": "python",
+  "complexity": "heldout",
+  "expected_issues": [
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [36, 39],
+      "description": "SQL injection via %-formatted SQL string passed to db.execute(stmt)"
+    },
+    {
+      "type": "command_injection",
+      "cwe": "CWE-78",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [43, 45],
+      "description": "Command injection via subprocess.Popen(cmd, shell=True)"
+    },
+    {
+      "type": "weak_crypto",
+      "cwe": "CWE-327",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [48, 50],
+      "description": "Weak SHA-1 hash in compute_webhook_fingerprint"
+    },
+    {
+      "type": "broad_exception",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [56, 58],
+      "description": "Overly broad except Exception in parse_exchange_rate"
+    },
+    {
+      "type": "too_many_parameters",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [61, 70],
+      "description": "Function dispatch_statement accepts 7 parameters (>5)"
+    }
+  ]
+}
+

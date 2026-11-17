@@ -254,7 +254,12 @@ def _py_check_parameters_and_god_class(tree: ast.AST, code_lines: List[str]) -> 
                 )
 
         elif isinstance(node, ast.ClassDef):
-            methods = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            # Exclude dunder lifecycle methods (__init__, __repr__, etc.) to match Java constructor exclusion
+            methods = [
+                n for n in node.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and not (n.name.startswith("__") and n.name.endswith("__"))
+            ]
             start = node.lineno
             end = getattr(node, "end_lineno", start)
             class_lines = end - start + 1
@@ -400,22 +405,44 @@ def _py_check_magic_docstring_naming(tree: ast.AST, code_lines: List[str]) -> Li
     """Detects magic numbers, missing docstrings, and poor naming in Python."""
     matches: List[QualityMatch] = []
 
-    # Identify module-level constant definitions (both regular Assign and AnnAssign)
+    # Identify named UPPER_CASE constant definitions (module-level or local named constants)
     constant_lines: Set[int] = set()
-    for node in tree.body if hasattr(tree, "body") else []:
+    for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id.isupper():
+                if isinstance(target, ast.Name) and target.id.isupper() and len(target.id) >= 2:
                     constant_lines.add(node.lineno)
         elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id.isupper():
+            if isinstance(node.target, ast.Name) and node.target.id.isupper() and len(node.target.id) >= 2:
                 constant_lines.add(node.lineno)
+
+    # Collect numeric constants passed as explicit keyword arguments (e.g. timeout=5)
+    # or as byte-length arguments to standard random/token generators (e.g. secrets.token_hex(16), os.urandom(32))
+    exempt_constants: Set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.keyword) and node.arg is not None and isinstance(node.value, ast.Constant):
+            exempt_constants.add(id(node.value))
+        elif isinstance(node, ast.Call):
+            func_obj = node.func
+            is_token_or_urandom = False
+            if isinstance(func_obj, ast.Attribute):
+                owner = func_obj.value.id if isinstance(func_obj.value, ast.Name) else ""
+                attr = func_obj.attr
+                if (owner == "secrets" and attr.startswith("token_")) or (owner == "os" and attr == "urandom") or attr.startswith("token_"):
+                    is_token_or_urandom = True
+            elif isinstance(func_obj, ast.Name):
+                if func_obj.id == "urandom" or func_obj.id.startswith("token_"):
+                    is_token_or_urandom = True
+            if is_token_or_urandom:
+                for arg in node.args:
+                    if isinstance(arg, ast.Constant):
+                        exempt_constants.add(id(arg))
 
     # 1. Magic numbers
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             val = float(node.value)
-            if val not in ALLOWED_MAGIC_NUMBERS and node.lineno not in constant_lines:
+            if val not in ALLOWED_MAGIC_NUMBERS and node.lineno not in constant_lines and id(node) not in exempt_constants:
                 snippet = code_lines[node.lineno - 1] if 0 <= node.lineno - 1 < len(code_lines) else ""
                 matches.append(
                     QualityMatch(
@@ -630,7 +657,8 @@ def _java_check_methods_and_classes(tree: javalang.tree.CompilationUnit, code_li
             )
 
     # Method inspections
-    for _, method in tree.filter(javalang.tree.MethodDeclaration):
+    for path, method in tree.filter(javalang.tree.MethodDeclaration):
+        in_anonymous_class = any(isinstance(anc, javalang.tree.ClassCreator) for anc in path)
         start, end = _java_get_node_span(method, default_start=1)
         method_lines = end - start + 1
         snippet = code_lines[start - 1] if 0 <= start - 1 < len(code_lines) else ""
@@ -697,8 +725,8 @@ def _java_check_methods_and_classes(tree: javalang.tree.CompilationUnit, code_li
                 )
             )
 
-        # Missing Method Javadoc
-        if method.documentation is None:
+        # Missing Method Javadoc (skip overridden methods inside anonymous inner classes)
+        if method.documentation is None and not in_anonymous_class:
             matches.append(
                 QualityMatch(
                     rule_type="missing_docstring",
@@ -889,7 +917,7 @@ def _check_duplicate_code(code_lines: List[str]) -> List[QualityMatch]:
         return matches
 
     seen_blocks: Dict[Tuple[str, ...], Tuple[int, int]] = {}
-    reported_starts: Set[int] = set()
+    reported_spans: List[Tuple[int, int]] = []
 
     for i in range(n - window + 1):
         block = tuple(normalized_lines[k][1] for k in range(i, i + window))
@@ -898,9 +926,13 @@ def _check_duplicate_code(code_lines: List[str]) -> List[QualityMatch]:
 
         if block in seen_blocks:
             first_start, first_end = seen_blocks[block]
-            # Avoid reporting overlapping duplicates in the same instance
-            if start_line > first_end and start_line not in reported_starts:
-                reported_starts.add(start_line)
+            # Avoid reporting overlapping or immediately adjacent sliding-window duplicates
+            overlaps_existing = any(
+                not (end_line < rs or start_line > re_ + 2)
+                for rs, re_ in reported_spans
+            )
+            if start_line > first_end and not overlaps_existing:
+                reported_spans.append((start_line, end_line))
                 snippet = "\n".join(code_lines[start_line - 1 : min(len(code_lines), start_line + 3)])
                 matches.append(
                     QualityMatch(
@@ -914,6 +946,11 @@ def _check_duplicate_code(code_lines: List[str]) -> List[QualityMatch]:
                         suggestion="Extract duplicate logic into a shared helper function or utility method.",
                     )
                 )
+            elif overlaps_existing and reported_spans:
+                # Extend the last contiguous duplicate span so subsequent sliding windows merge cleanly
+                prev_s, prev_e = reported_spans[-1]
+                if start_line <= prev_e + 2:
+                    reported_spans[-1] = (prev_s, max(prev_e, end_line))
         else:
             seen_blocks[block] = (start_line, end_line)
 

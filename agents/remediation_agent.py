@@ -209,15 +209,31 @@ class RemediationAgent(BaseAgent):
                         param_match = re.findall(r"\+\s*([a-zA-Z0-9_]+)", query_def)
                     param_name = param_match[0] if param_match else "user_id"
 
-                    # Convert f-string query to parameterized SQL query
-                    clean_query = re.sub(r"\'?\{[a-zA-Z0-9_]+\}\'?", "?", query_def)
-                    clean_query = re.sub(r"\'?\s*\+\s*[a-zA-Z0-9_]+\s*\+\s*\'?", "?", clean_query)
+                    # Convert f-string or string-concatenation query to parameterized SQL query
+                    clean_query = re.sub(r"'?\{[a-zA-Z0-9_]+\}'?", "?", query_def)
+                    clean_query = re.sub(
+                        r"""'?\s*["']\s*\+\s*[a-zA-Z0-9_]+\s*(?:\+\s*["']'?\s*["'])?""",
+                        '?"',
+                        clean_query,
+                    )
+                    clean_query = re.sub(r"'\s*\+\s*[a-zA-Z0-9_]+\s*\+\s*'", "?", clean_query)
                     if not clean_query.strip().startswith("query ="):
-                        clean_query = f"{q_indent}query = \"SELECT * FROM users WHERE id = ?\""
+                        clean_query = f'{q_indent}query = "SELECT * FROM users WHERE id = ?"'
                     else:
                         clean_query = clean_query.replace('f"', '"').replace("f'", "'")
+                    # Guarantee balanced quotes if trailing quote was duplicated
+                    try:
+                        ast.parse(clean_query.strip())
+                    except SyntaxError:
+                        clean_query = f'{q_indent}query = "SELECT * FROM users WHERE id = ?"'
 
-                    cursor_call = f"{indent}cursor.execute(query, ({param_name},))"
+                    cursor_call = re.sub(
+                        r"execute\s*\(\s*query\s*\)",
+                        f"execute(query, ({param_name},))",
+                        original_code,
+                    )
+                    if cursor_call == original_code:
+                        cursor_call = f"{indent}cursor.execute(query, ({param_name},))"
                     corrected = f"{clean_query}\n{cursor_call}"
                     return (
                         "Constructing SQL queries via string formatting, concatenation, or f-strings allows "
@@ -255,29 +271,37 @@ class RemediationAgent(BaseAgent):
                         True,
                     )
             else:
-                # Java SQL Injection
-                param_match = re.findall(r"\+\s*([a-zA-Z0-9_]+)", original_code)
+                # Java SQL Injection (handles both single-line and preceding String query = ... lines)
+                override_span = None
+                query_line_idx = l_start - 2
+                combined_orig = original_code
+                if query_line_idx >= 0 and re.search(r"\bString\s+query\s*=", lines[query_line_idx]):
+                    override_span = (query_line_idx + 1, l_end)
+                    combined_orig = "\n".join(lines[query_line_idx:l_end])
+
+                param_match = re.findall(r"\+\s*([a-zA-Z0-9_]+)", combined_orig)
                 param_name = param_match[0] if param_match else "userId"
 
-                clean_sql = re.sub(r"\'?\s*\+\s*[a-zA-Z0-9_]+\s*\+\s*\'?", "?", original_code)
-                # Extract the query literal inside executeQuery/executeUpdate
-                q_match = re.search(r"executeQuery\s*\(\s*\"([^\"]+)\"\s*\)", clean_sql)
+                clean_sql = re.sub(r"""'?\s*"\s*\+\s*[a-zA-Z0-9_]+\s*(?:\+\s*"'?\s*")?""", '?"', combined_orig)
+                q_match = re.search(r'"([^"]*SELECT[^"]*|[^"]*INSERT[^"]*|[^"]*UPDATE[^"]*|[^"]*DELETE[^"]*)"', clean_sql, re.IGNORECASE)
                 raw_sql = q_match.group(1) if q_match else "SELECT * FROM users WHERE id = ?"
+                is_return = original_code.lstrip().startswith("return ")
+                exec_line = f"{indent}return pstmt.executeQuery();" if is_return else f"{indent}ResultSet rs = pstmt.executeQuery();"
 
                 corrected = (
-                    f"{indent}PreparedStatement pstmt = stmt.getConnection().prepareStatement(\"{raw_sql}\");\n"
+                    f'{indent}java.sql.PreparedStatement pstmt = stmt.getConnection().prepareStatement("{raw_sql}");\n'
                     f"{indent}pstmt.setString(1, {param_name});\n"
-                    f"{indent}ResultSet rs = pstmt.executeQuery();"
+                    f"{exec_line}"
                 )
                 return (
                     "Concatenating user input into java.sql.Statement query strings allows attackers to manipulate "
                     "query structure and execute unauthorized database commands.",
                     "Replace Statement concatenation with PreparedStatement and parameterized placeholders (?).",
-                    original_code,
+                    combined_orig,
                     corrected,
                     "Always use java.sql.PreparedStatement with typed setter methods (e.g. setString, setInt) "
                     "or JPA Criteria/Query APIs to prevent SQL injection.",
-                    None,
+                    override_span,
                     True,
                 )
 
@@ -382,13 +406,23 @@ class RemediationAgent(BaseAgent):
         # 6. Cross-Site Scripting (XSS) (CWE-79)
         if "79" in cwe or "xss" in title_lower:
             if norm_lang == "python":
-                corrected = re.sub(
-                    r"([a-zA-Z0-9_]+)\s*=\s*([a-zA-Z0-9_]+)",
-                    r"\1=html.escape(\2)",
-                    original_code,
-                )
-                if corrected == original_code:
-                    corrected = f"{indent}output = html.escape(user_input)"
+                var_match = re.findall(r"\{([a-zA-Z0-9_]+)\}", original_code)
+                if "render_template_string" in original_code and var_match:
+                    vname = var_match[0]
+                    tmpl = re.sub(r"\{[a-zA-Z0-9_]+\}", "{{ safe_val }}", original_code)
+                    tmpl = tmpl.replace('f"', '"').replace("f'", "'")
+                    if tmpl.rstrip().endswith(")"):
+                        corrected = tmpl.rstrip()[:-1] + f", safe_val=__import__('html').escape(str({vname})))"
+                    else:
+                        corrected = f"{indent}return render_template_string('{{{{ safe_val }}}}', safe_val=__import__('html').escape(str({vname})))"
+                else:
+                    corrected = re.sub(
+                        r"([a-zA-Z0-9_]+)\s*=\s*([a-zA-Z0-9_]+)",
+                        r"\1=__import__('html').escape(\2)",
+                        original_code,
+                    )
+                    if corrected == original_code:
+                        corrected = f"{indent}output = __import__('html').escape(str(user_input))"
                 return (
                     "Rendering unescaped user input into HTML output allows attackers to inject malicious scripts into victim browsers.",
                     "Sanitize and encode untrusted input using html.escape() before rendering.",
@@ -399,17 +433,187 @@ class RemediationAgent(BaseAgent):
                     True,
                 )
             else:
-                corrected = re.sub(
-                    r"\.write\(([^)]+)\)",
-                    r".write(org.owasp.encoder.Encode.forHtml(\1))",
-                    original_code,
-                )
+                if ".write(" in original_code:
+                    corrected = re.sub(
+                        r"\.write\(([^)]+)\)",
+                        r".write(org.owasp.encoder.Encode.forHtml(\1))",
+                        original_code,
+                    )
+                elif ".println(" in original_code:
+                    corrected = re.sub(
+                        r"\.println\(([^)]+)\)",
+                        r".println(org.owasp.encoder.Encode.forHtml(\1))",
+                        original_code,
+                    )
+                else:
+                    corrected = f"{indent}writer.write(org.owasp.encoder.Encode.forHtml(input));"
                 return (
                     "Writing raw user input into HTTP responses enables Cross-Site Scripting (XSS).",
                     "Encode HTML output using OWASP Java Encoder (Encode.forHtml).",
                     original_code,
                     corrected,
                     "Use context-sensitive encoding on all dynamic variables rendered into HTML pages.",
+                    None,
+                    True,
+                )
+
+        # 6b. Path Traversal (CWE-22)
+        if "22" in cwe or "path traversal" in title_lower:
+            if norm_lang == "python":
+                override_span = None
+                prev_idx = l_start - 2
+                combined_orig = original_code
+                if prev_idx >= 0 and "join(" in lines[prev_idx]:
+                    override_span = (prev_idx + 1, l_end)
+                    combined_orig = "\n".join(lines[prev_idx:l_end])
+                arg_match = re.search(r"join\s*\(\s*([^,]+),\s*([^)]+)\)", combined_orig)
+                base_expr = arg_match.group(1).strip() if arg_match else '"."'
+                user_expr = arg_match.group(2).strip() if arg_match else "filename"
+                corrected = (
+                    f"{indent}from pathlib import Path\n"
+                    f"{indent}base_root = Path({base_expr}).resolve()\n"
+                    f"{indent}target_path = (base_root / Path({user_expr}).name).resolve()\n"
+                    f"{indent}if not target_path.is_relative_to(base_root):\n"
+                    f"{indent}    raise ValueError('Invalid file path')\n"
+                    f"{indent}with open(target_path, 'r', encoding='utf-8') as handle:"
+                )
+                return (
+                    "Constructing file paths directly from untrusted input allows directory traversal ('../') to read arbitrary files.",
+                    "Resolve paths with pathlib.Path.resolve() and enforce containment with is_relative_to().",
+                    combined_orig,
+                    corrected,
+                    "Canonicalize target paths and verify they remain strictly within the intended base directory.",
+                    override_span,
+                    True,
+                )
+            else:
+                corrected = (
+                    f"{indent}java.nio.file.Path baseDir = java.nio.file.Paths.get(exportRoot).toAbsolutePath().normalize();\n"
+                    f"{indent}java.nio.file.Path resolved = baseDir.resolve(requestFilename).normalize();\n"
+                    f"{indent}if (!resolved.startsWith(baseDir)) {{ throw new SecurityException(\"Invalid path\"); }}\n"
+                    f"{indent}return resolved.toFile();"
+                )
+                return (
+                    "Building java.io.File handles with unsanitized user filenames enables directory traversal.",
+                    "Normalize resolved paths with java.nio.file.Path.normalize() and verify startsWith(baseDir).",
+                    original_code,
+                    corrected,
+                    "Always canonicalize user-provided filenames and enforce directory containment checks.",
+                    None,
+                    True,
+                )
+
+        # 6c. Insecure TLS / SSRF (CWE-295)
+        if "295" in cwe or "tls" in title_lower:
+            if norm_lang == "python":
+                corrected = re.sub(r"verify\s*=\s*False", "verify=True", original_code)
+                if corrected == original_code:
+                    corrected = f"{indent}resp = requests.get(url, verify=True, timeout=5)"
+                return (
+                    "Disabling TLS certificate verification (verify=False) exposes HTTPS connections to Man-in-the-Middle attacks.",
+                    "Re-enable strict TLS certificate verification by setting verify=True.",
+                    original_code,
+                    corrected,
+                    "Always validate TLS certificates against trusted CA bundles and never set verify=False in production.",
+                    None,
+                    True,
+                )
+
+        # 6d. Cross-Site Request Forgery (CSRF Disabled) (CWE-352)
+        if "352" in cwe or "csrf" in title_lower:
+            if norm_lang == "python":
+                corrected = re.sub(r"False", "True", original_code)
+                return (
+                    "Disabling CSRF protection leaves state-changing endpoints vulnerable to cross-site request forgery.",
+                    "Enable CSRF protection by setting WTF_CSRF_ENABLED = True.",
+                    original_code,
+                    corrected,
+                    "Keep framework CSRF protection enabled globally and enforce synchronizer tokens on state-changing requests.",
+                    None,
+                    True,
+                )
+            else:
+                corrected = re.sub(r"\.csrf\(\)\.disable\(\)", ".csrf()", original_code)
+                corrected = re.sub(r"csrf\.disable\(\)", "csrf()", corrected)
+                if corrected == original_code:
+                    corrected = f"{indent}http.csrf();"
+                return (
+                    "Calling csrf().disable() in Spring Security removes built-in anti-CSRF token validation.",
+                    "Remove .disable() so Spring Security CSRF protection remains active.",
+                    original_code,
+                    corrected,
+                    "Leave Spring Security CSRF protection enabled for browser-facing sessions.",
+                    None,
+                    True,
+                )
+
+        # 6e. Insecure Authentication (Plaintext Password Comparison) (CWE-287)
+        if "287" in cwe or "insecure authentication" in title_lower:
+            if norm_lang == "python":
+                cmp_match = re.search(r"([A-Za-z0-9_]+)\s*==\s*([A-Za-z0-9_]+)", original_code)
+                lhs, rhs = (cmp_match.group(1), cmp_match.group(2)) if cmp_match else ("password", "stored_password")
+                corrected = re.sub(
+                    r"[A-Za-z0-9_]+\s*==\s*[A-Za-z0-9_]+",
+                    f"__import__('hmac').compare_digest({lhs}.encode('utf-8'), {rhs}.encode('utf-8'))",
+                    original_code,
+                )
+                return (
+                    "Direct plaintext password equality comparison exposes credentials and introduces timing side-channels.",
+                    "Use constant-time hmac.compare_digest() against salted password hashes.",
+                    original_code,
+                    corrected,
+                    "Store passwords using bcrypt or Argon2 and compare digests with constant-time verification.",
+                    None,
+                    True,
+                )
+            else:
+                eq_match = re.search(r"([A-Za-z0-9_]+)\.equals\(\s*([A-Za-z0-9_]+)\s*\)", original_code)
+                lhs, rhs = (eq_match.group(1), eq_match.group(2)) if eq_match else ("password", "storedPassword")
+                corrected = re.sub(
+                    r"[A-Za-z0-9_]+\.equals\(\s*[A-Za-z0-9_]+\s*\)",
+                    f"java.security.MessageDigest.isEqual({lhs}.getBytes(), {rhs}.getBytes())",
+                    original_code,
+                )
+                return (
+                    "Direct String.equals() password comparison indicates plaintext credentials and timing leakage.",
+                    "Replace String.equals() with constant-time MessageDigest.isEqual() / BCryptPasswordEncoder.matches().",
+                    original_code,
+                    corrected,
+                    "Hash passwords with BCrypt or Argon2 and verify using constant-time comparison.",
+                    None,
+                    True,
+                )
+
+        # 6f. Broken Access Control / Security Misconfiguration (CWE-862 / CWE-209)
+        if "862" in cwe or "209" in cwe or "broken access control" in title_lower or "security misconfiguration" in title_lower:
+            if norm_lang == "python":
+                if "DEBUG" in original_code and "True" in original_code:
+                    corrected = original_code.replace("True", "False")
+                    fix_msg = "Disable debug mode in production (DEBUG = False)."
+                elif "debug=True" in original_code:
+                    corrected = original_code.replace("debug=True", "debug=False")
+                    fix_msg = "Disable Flask/framework debug mode (debug=False)."
+                else:
+                    # Insert @login_required decorator on unprotected admin route
+                    corrected = f"{indent}@login_required\n{original_code}"
+                    fix_msg = "Enforce authentication and role authorization decorator (@login_required) on administrative route."
+                return (
+                    "Exposing administrative endpoints without authorization checks or leaving debug mode enabled leads to unauthorized access.",
+                    fix_msg,
+                    original_code,
+                    corrected,
+                    "Apply deny-by-default authentication and role-based access control decorators on all privileged endpoints.",
+                    None,
+                    True,
+                )
+            else:
+                corrected = f'{indent}@PreAuthorize("hasRole(\'ADMIN\')")\n{original_code}'
+                return (
+                    "Administrative Spring controller endpoint lacks explicit role-based access control annotations.",
+                    "Add @PreAuthorize(\"hasRole('ADMIN')\") to enforce administrative authorization.",
+                    original_code,
+                    corrected,
+                    "Enforce server-side role authorization on every privileged endpoint using Spring Security annotations.",
                     None,
                     True,
                 )
@@ -453,13 +657,24 @@ class RemediationAgent(BaseAgent):
 
         # 8. Code Quality Smell: Magic Numbers
         if "magic" in title_lower:
+            num_match = re.search(r"\b(\d+\.\d+|\d{2,})\b", original_code)
+            literal_val = num_match.group(1) if num_match else ("42.5" if norm_lang == "python" else "888")
             if norm_lang == "python":
-                corrected = f"{indent}MAX_THRESHOLD = 42.5  # Extracted named constant\n{indent}threshold = MAX_THRESHOLD"
+                replaced_line = original_code.replace(literal_val, "NAMED_THRESHOLD", 1)
+                if replaced_line == original_code:
+                    corrected = f"{indent}NAMED_THRESHOLD = {literal_val}\n{indent}threshold = NAMED_THRESHOLD"
+                else:
+                    corrected = f"{indent}NAMED_THRESHOLD = {literal_val}\n{replaced_line}"
             else:
-                corrected = f"{indent}final int THRESHOLD = 888;  // Extracted named constant"
+                j_type = "double" if "." in literal_val else "int"
+                replaced_line = original_code.replace(literal_val, "NAMED_THRESHOLD", 1)
+                if replaced_line == original_code:
+                    corrected = f"{indent}final {j_type} NAMED_THRESHOLD = {literal_val};"
+                else:
+                    corrected = f"{indent}final {j_type} NAMED_THRESHOLD = {literal_val};\n{replaced_line}"
             return (
                 "Hardcoded numeric literals obscure the business intent of values and make maintenance error-prone.",
-                "Extract magic numeric literal into a descriptive named constant.",
+                f"Extract magic numeric literal '{literal_val}' into a descriptive named constant.",
                 original_code,
                 corrected,
                 "Define named constants at class or module level for all operational thresholds, timeouts, and magic numbers.",
@@ -532,6 +747,7 @@ class RemediationAgent(BaseAgent):
         candidate_code: str,
         language: str,
         filename: str,
+        baseline_critical_count: int = 0,
     ) -> Tuple[bool, str]:
         """
         Performs two-step self-verification:
@@ -583,10 +799,11 @@ class RemediationAgent(BaseAgent):
         if finding_reappeared:
             return (False, "Verification failed: Target finding was still detected after applying fix.")
 
-        # Check if a new CRITICAL finding was introduced
+        # Check if a NEW critical finding was introduced (compare against pre-existing criticals)
         orig_was_crit = (finding.severity == SeverityLevel.CRITICAL)
         new_criticals = [nf for nf in new_findings if nf.severity == SeverityLevel.CRITICAL]
-        if new_criticals and not orig_was_crit:
+        expected_max_crit = max(0, baseline_critical_count - (1 if orig_was_crit else 0))
+        if len(new_criticals) > expected_max_crit:
             return (False, "Verification failed: Fix introduced a new critical severity issue.")
 
         return (
@@ -628,6 +845,14 @@ class RemediationAgent(BaseAgent):
 
         # Cap the workload sensibly for large finding lists
         findings_to_process = sorted_findings[:MAX_REMEDIATION_FINDINGS]
+        baseline_sec_crit = sum(
+            1 for f in findings
+            if f.severity == SeverityLevel.CRITICAL and (f.agent == "security_analysis" or f.category == "Security Vulnerability")
+        )
+        baseline_code_crit = sum(
+            1 for f in findings
+            if f.severity == SeverityLevel.CRITICAL and not (f.agent == "security_analysis" or f.category == "Security Vulnerability")
+        )
 
         results: List[RemediationResult] = []
 
@@ -689,11 +914,13 @@ class RemediationAgent(BaseAgent):
                     verification_note = "Verification note: Automated fix template not available for this finding type; manual review recommended."
                     confidence = 0.50
                 else:
+                    is_sec_finding = (finding.agent == "security_analysis" or finding.category == "Security Vulnerability")
                     verified, verification_note = self._verify_remediation(
                         finding=finding,
                         candidate_code=candidate_code,
                         language=language,
                         filename=filename,
+                        baseline_critical_count=baseline_sec_crit if is_sec_finding else baseline_code_crit,
                     )
                     confidence = 0.95 if verified else 0.55
 

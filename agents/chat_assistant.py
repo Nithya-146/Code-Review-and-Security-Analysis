@@ -40,12 +40,17 @@ OUT_OF_SCOPE_WORDS: Set[str] = {
 # Domain keywords to check if an unclassified question is in-scope
 IN_SCOPE_DOMAIN_WORDS: Set[str] = {
     "code", "line", "function", "class", "file", "method", "variable",
-    "security", "vulnerability", "cwe", "owasp", "defect", "smell", "bug",
-    "sql", "sqli", "injection", "xss", "csrf", "secret", "password", "key",
-    "token", "crypto", "hash", "md5", "sha", "deserialization", "pickle",
-    "command", "shell", "traversal", "path", "ssrf", "exception", "catch",
-    "except", "magic", "nesting", "complexity", "health", "score", "fix",
+    "security", "vulnerability", "vulnerabilities", "cwe", "owasp", "defect", "smell", "smells", "bug",
+    "sql", "sqli", "injection", "xss", "csrf", "secret", "secrets", "password", "passwords", "key",
+    "token", "tokens", "crypto", "cryptographic", "hash", "hashing", "md5", "sha", "deserialization", "pickle",
+    "command", "shell", "traversal", "path", "ssrf", "exception", "exceptions", "catch",
+    "except", "magic", "nesting", "complexity", "cyclomatic", "health", "score", "fix",
     "remediation", "patch", "review", "audit", "python", "java",
+    "supply", "chain", "dependency", "dependencies", "design", "threat", "modeling",
+    "authentication", "authorization", "auth", "session", "sessions", "logging", "alerting",
+    "misconfiguration", "cors", "debug", "god", "refactor", "duplicate", "idor",
+    "access", "control", "preparedstatement", "preparedstatements", "parameterized",
+    "vault", "rotation", "credentials", "breach", "breaches", "integrity", "escaping", "encoding",
 }
 
 
@@ -690,13 +695,20 @@ class ChatAssistant:
         citations = self._retrieve_kb_context(clean_question, finding=resolved_finding, k=3)
 
         # 6. Synthesize Response by Intent
+        has_explicit_target = bool(
+            re.search(r"\b(line\s*\d+|finding\s*#?\d+|first|second|third|that one|this issue)\b", clean_question.lower())
+        )
         if intent == "summary_request":
             return self._answer_summary(clean_question, citations)
 
         elif intent == "finding_explanation":
+            if resolved_finding is None and resolution_error is None and not has_explicit_target and citations:
+                return self._answer_concept_or_practice(clean_question, "concept_question", citations)
             return self._answer_finding_explanation(resolved_finding, resolution_error, citations)
 
         elif intent == "fix_request":
+            if resolved_finding is None and resolution_error is None and not has_explicit_target and citations:
+                return self._answer_concept_or_practice(clean_question, "best_practice", citations)
             return self._answer_fix_request(resolved_finding, resolution_error, citations)
 
         elif intent in ("concept_question", "best_practice"):

@@ -1,0 +1,72 @@
+{
+  "sample_file": "py_medium.py",
+  "language": "python",
+  "complexity": "medium",
+  "expected_issues": [
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [23, 26],
+      "description": "SQL injection via f-string in search_reports"
+    },
+    {
+      "type": "command_injection",
+      "cwe": "CWE-78",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [29, 31],
+      "description": "Command injection via os.system string concatenation"
+    },
+    {
+      "type": "xss",
+      "cwe": "CWE-79",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [35, 37],
+      "description": "XSS via render_template_string with f-string"
+    },
+    {
+      "type": "weak_crypto",
+      "cwe": "CWE-327",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [39, 41],
+      "description": "Weak MD5 hashing in compute_file_digest"
+    },
+    {
+      "type": "path_traversal",
+      "cwe": "CWE-22",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [43, 46],
+      "description": "Path traversal via open() with untrusted filename"
+    },
+    {
+      "type": "deep_nesting",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [48, 67],
+      "description": "Deeply nested conditionals in evaluate_approval_matrix"
+    },
+    {
+      "type": "too_many_parameters",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [69, 78],
+      "description": "Method build_notification_envelope exceeds 5 parameters"
+    },
+    {
+      "type": "magic_number",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "LOW",
+      "line_range": [93, 95],
+      "description": "Magic number literal 0.1375 in compute_shipping_fee"
+    }
+  ]
+}
+

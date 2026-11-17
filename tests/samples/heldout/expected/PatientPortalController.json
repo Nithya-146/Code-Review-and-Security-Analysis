@@ -1,0 +1,48 @@
+{
+  "sample_file": "PatientPortalController.java",
+  "language": "java",
+  "complexity": "heldout",
+  "expected_issues": [
+    {
+      "type": "csrf",
+      "cwe": "CWE-352",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [25, 27],
+      "description": "CSRF protection disabled via securityBuilder.csrf().disable()"
+    },
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [31, 34],
+      "description": "SQL injection via StringBuilder passed to createStatement().executeQuery()"
+    },
+    {
+      "type": "xss",
+      "cwe": "CWE-79",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [37, 39],
+      "description": "XSS via response.getWriter().println with unescaped patientAlias"
+    },
+    {
+      "type": "weak_crypto",
+      "cwe": "CWE-327",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [42, 45],
+      "description": "Weak SHA-1 hash in MessageDigest.getInstance('SHA-1')"
+    },
+    {
+      "type": "too_many_parameters",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [48, 57],
+      "description": "Method scheduleVisit accepts 7 parameters (>5)"
+    }
+  ]
+}
+

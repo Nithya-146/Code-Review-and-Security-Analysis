@@ -1,0 +1,1175 @@
+{
+  "generated_at": "2026-11-17T15:26:23.090095+00:00",
+  "samples_evaluated": 7,
+  "detection_accuracy": {
+    "overall": {
+      "tp": 49,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "security": {
+      "tp": 29,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "code_quality": {
+      "tp": 20,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "per_sample": [
+      {
+        "sample_file": "JavaComplex.java",
+        "language": "java",
+        "complexity": "complex",
+        "expected_count": 13,
+        "detected_count": 13,
+        "overall": {
+          "tp": 13,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 7,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 13,
+        "consistency_same_severity": 13,
+        "consistency_same_score": 13,
+        "false_positives": [],
+        "false_negatives": []
+      },
+      {
+        "sample_file": "JavaMedium.java",
+        "language": "java",
+        "complexity": "medium",
+        "expected_count": 8,
+        "detected_count": 8,
+        "overall": {
+          "tp": 8,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 5,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 8,
+        "consistency_same_severity": 8,
+        "consistency_same_score": 8,
+        "false_positives": [],
+        "false_negatives": []
+      },
+      {
+        "sample_file": "JavaSmall.java",
+        "language": "java",
+        "complexity": "small",
+        "expected_count": 3,
+        "detected_count": 3,
+        "overall": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 3,
+        "consistency_same_severity": 3,
+        "consistency_same_score": 3,
+        "false_positives": [],
+        "false_negatives": []
+      },
+      {
+        "sample_file": "py_clean.py",
+        "language": "python",
+        "complexity": "clean",
+        "expected_count": 0,
+        "detected_count": 0,
+        "overall": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 0,
+        "consistency_same_severity": 0,
+        "consistency_same_score": 0,
+        "false_positives": [],
+        "false_negatives": []
+      },
+      {
+        "sample_file": "py_complex.py",
+        "language": "python",
+        "complexity": "complex",
+        "expected_count": 14,
+        "detected_count": 14,
+        "overall": {
+          "tp": 14,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 8,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 14,
+        "consistency_same_severity": 14,
+        "consistency_same_score": 14,
+        "false_positives": [],
+        "false_negatives": []
+      },
+      {
+        "sample_file": "py_medium.py",
+        "language": "python",
+        "complexity": "medium",
+        "expected_count": 8,
+        "detected_count": 8,
+        "overall": {
+          "tp": 8,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 5,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 8,
+        "consistency_same_severity": 8,
+        "consistency_same_score": 8,
+        "false_positives": [],
+        "false_negatives": []
+      },
+      {
+        "sample_file": "py_small.py",
+        "language": "python",
+        "complexity": "small",
+        "expected_count": 3,
+        "detected_count": 3,
+        "overall": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "security": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "code_quality": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "consistency_keys": 3,
+        "consistency_same_severity": 3,
+        "consistency_same_score": 3,
+        "false_positives": [],
+        "false_negatives": []
+      }
+    ]
+  },
+  "severity_classification": {
+    "matched_findings": 49,
+    "exact_matches": 49,
+    "accuracy": 1.0,
+    "confusion_matrix": {
+      "CRITICAL": {
+        "CRITICAL": 10,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0,
+        "INFO": 0
+      },
+      "HIGH": {
+        "CRITICAL": 0,
+        "HIGH": 21,
+        "MEDIUM": 0,
+        "LOW": 0,
+        "INFO": 0
+      },
+      "MEDIUM": {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 14,
+        "LOW": 0,
+        "INFO": 0
+      },
+      "LOW": {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 4,
+        "INFO": 0
+      },
+      "INFO": {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0,
+        "INFO": 0
+      }
+    }
+  },
+  "severity_consistency": {
+    "runs_per_sample": 3,
+    "total_unique_findings": 49,
+    "same_severity_count": 49,
+    "same_severity_rate": 1.0,
+    "same_score_count": 49,
+    "same_score_rate": 1.0
+  },
+  "remediation_quality": {
+    "total_findings": 49,
+    "specific_count": 37,
+    "specific_rate": 0.7551,
+    "syntax_valid_count": 49,
+    "syntax_valid_rate": 1.0,
+    "pattern_removed_count": 37,
+    "pattern_removed_rate": 0.7551,
+    "verified_count": 34,
+    "verified_rate": 0.6939,
+    "failed_items": [
+      {
+        "finding_id": "CODE-002",
+        "title": "God Class (Large Class Smell)",
+        "cwe": null,
+        "language": "java",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-003",
+        "title": "Deep Control Flow Nesting",
+        "cwe": null,
+        "language": "java",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-004",
+        "title": "Long Method",
+        "cwe": null,
+        "language": "java",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-001",
+        "title": "Duplicate Code Block",
+        "cwe": null,
+        "language": "java",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-001",
+        "title": "Deep Control Flow Nesting",
+        "cwe": null,
+        "language": "java",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-002",
+        "title": "Too Many Parameters",
+        "cwe": null,
+        "language": "java",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-004",
+        "title": "God Class (Large Class Smell)",
+        "cwe": null,
+        "language": "python",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-002",
+        "title": "Deep Control Flow Nesting",
+        "cwe": null,
+        "language": "python",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-003",
+        "title": "Long Function",
+        "cwe": null,
+        "language": "python",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-001",
+        "title": "Duplicate Code Block",
+        "cwe": null,
+        "language": "python",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-001",
+        "title": "Deep Control Flow Nesting",
+        "cwe": null,
+        "language": "python",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      },
+      {
+        "finding_id": "CODE-002",
+        "title": "Too Many Parameters",
+        "cwe": null,
+        "language": "python",
+        "has_remediation": true,
+        "specific": false,
+        "has_corrected_code": true,
+        "syntax_valid": true,
+        "pattern_removed": false,
+        "verified": false
+      }
+    ]
+  },
+  "rag_relevance": {
+    "total_in_scope": 20,
+    "hit_at_1_count": 19,
+    "hit_rate_at_1": 0.95,
+    "hit_at_3_count": 20,
+    "hit_rate_at_3": 1.0,
+    "precision_at_3": 0.8,
+    "cited_count": 20,
+    "citation_rate": 1.0,
+    "expected_source_citation_rate": 0.95,
+    "total_out_of_scope": 3,
+    "out_of_scope_declined": 3,
+    "out_of_scope_accuracy": 1.0,
+    "in_scope_details": [
+      {
+        "id": "Q01",
+        "topic": "SQL Injection",
+        "question": "How do I prevent SQL injection in Python using parameterized queries?",
+        "expected_sources": [
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "top3_sources": [
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "top3_scores": [
+          0.5646,
+          0.6123,
+          0.6123
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "finding_explanation",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "owasp_sqli_cheatsheet.txt",
+          "owasp_sqli_cheatsheet.txt",
+          "A05_injection.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q02",
+        "topic": "Secrets Management",
+        "question": "What are the best practices for storing API keys and secrets securely?",
+        "expected_sources": [
+          "owasp_secrets_cheatsheet.txt",
+          "A07_authentication_failures.md",
+          "A02_security_misconfiguration.md"
+        ],
+        "top3_sources": [
+          "A04_cryptographic_failures.md",
+          "owasp_secrets_cheatsheet.txt",
+          "owasp_secrets_cheatsheet.txt"
+        ],
+        "top3_scores": [
+          0.4428,
+          0.424,
+          0.4308
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "best_practice",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "owasp_secrets_cheatsheet.txt",
+          "A07_authentication_failures.md",
+          "A07_authentication_failures.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q03",
+        "topic": "Broken Access Control",
+        "question": "What is Broken Access Control and how can I prevent IDOR vulnerabilities?",
+        "expected_sources": [
+          "A01_broken_access_control.md"
+        ],
+        "top3_sources": [
+          "A01_broken_access_control.md",
+          "A01_broken_access_control.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "top3_scores": [
+          0.8284,
+          0.5237,
+          0.3454
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A01_broken_access_control.md",
+          "A01_broken_access_control.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q04",
+        "topic": "XSS",
+        "question": "Why is Cross-Site Scripting (XSS) dangerous and how should output be escaped?",
+        "expected_sources": [
+          "A05_injection.md"
+        ],
+        "top3_sources": [
+          "A05_injection.md",
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "top3_scores": [
+          0.3589,
+          0.321,
+          0.2762
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "finding_explanation",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "owasp_secrets_cheatsheet.txt",
+          "A05_injection.md",
+          "A01_broken_access_control.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q05",
+        "topic": "CSRF",
+        "question": "What is CSRF and how do anti-CSRF tokens protect web applications?",
+        "expected_sources": [
+          "A01_broken_access_control.md",
+          "A02_security_misconfiguration.md",
+          "A06_insecure_design.md"
+        ],
+        "top3_sources": [
+          "A01_broken_access_control.md",
+          "A07_authentication_failures.md",
+          "A02_security_misconfiguration.md"
+        ],
+        "top3_scores": [
+          0.2782,
+          0.2774,
+          0.2512
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A07_authentication_failures.md",
+          "A07_authentication_failures.md",
+          "A07_authentication_failures.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q06",
+        "topic": "Cryptographic Failures",
+        "question": "Why are MD5 and SHA-1 considered weak cryptographic hash functions?",
+        "expected_sources": [
+          "A04_cryptographic_failures.md"
+        ],
+        "top3_sources": [
+          "A04_cryptographic_failures.md",
+          "A04_cryptographic_failures.md",
+          "A04_cryptographic_failures.md"
+        ],
+        "top3_scores": [
+          0.3658,
+          0.3083,
+          0.2189
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A04_cryptographic_failures.md",
+          "A04_cryptographic_failures.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q07",
+        "topic": "Insecure Deserialization",
+        "question": "What are the risks of insecure deserialization using Python pickle or Java ObjectInputStream?",
+        "expected_sources": [
+          "A08_software_or_data_integrity_failures.md"
+        ],
+        "top3_sources": [
+          "A08_software_or_data_integrity_failures.md",
+          "A08_software_or_data_integrity_failures.md",
+          "A08_software_or_data_integrity_failures.md"
+        ],
+        "top3_scores": [
+          0.6012,
+          0.5975,
+          0.5928
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A08_software_or_data_integrity_failures.md",
+          "A08_software_or_data_integrity_failures.md",
+          "A08_software_or_data_integrity_failures.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q08",
+        "topic": "Command Injection",
+        "question": "How do I fix command injection when calling system commands?",
+        "expected_sources": [
+          "A05_injection.md"
+        ],
+        "top3_sources": [
+          "A05_injection.md",
+          "A05_injection.md",
+          "A05_injection.md"
+        ],
+        "top3_scores": [
+          0.4557,
+          0.4313,
+          0.3297
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "best_practice",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A05_injection.md",
+          "A05_injection.md",
+          "A05_injection.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q09",
+        "topic": "Path Traversal",
+        "question": "How do I prevent path traversal attacks when opening user-supplied filenames?",
+        "expected_sources": [
+          "A01_broken_access_control.md"
+        ],
+        "top3_sources": [
+          "A01_broken_access_control.md",
+          "A07_authentication_failures.md",
+          "A02_security_misconfiguration.md"
+        ],
+        "top3_scores": [
+          0.293,
+          0.2421,
+          0.2333
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A01_broken_access_control.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q10",
+        "topic": "Security Misconfiguration",
+        "question": "What security misconfigurations like debug mode or permissive CORS should be avoided?",
+        "expected_sources": [
+          "A02_security_misconfiguration.md"
+        ],
+        "top3_sources": [
+          "A02_security_misconfiguration.md",
+          "A02_security_misconfiguration.md",
+          "A09_security_logging_and_alerting_failures.md"
+        ],
+        "top3_scores": [
+          0.5237,
+          0.4816,
+          0.339
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A02_security_misconfiguration.md",
+          "A02_security_misconfiguration.md",
+          "A09_security_logging_and_alerting_failures.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q11",
+        "topic": "Supply Chain Failures",
+        "question": "How can I mitigate software supply chain and vulnerable dependency risks?",
+        "expected_sources": [
+          "A03_software_supply_chain_failures.md"
+        ],
+        "top3_sources": [
+          "A03_software_supply_chain_failures.md",
+          "A03_software_supply_chain_failures.md",
+          "A06_insecure_design.md"
+        ],
+        "top3_scores": [
+          0.7585,
+          0.5842,
+          0.4097
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A03_software_supply_chain_failures.md",
+          "A03_software_supply_chain_failures.md",
+          "A06_insecure_design.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q12",
+        "topic": "Insecure Design",
+        "question": "What is insecure design and how does threat modeling help prevent it?",
+        "expected_sources": [
+          "A06_insecure_design.md"
+        ],
+        "top3_sources": [
+          "A06_insecure_design.md",
+          "A06_insecure_design.md",
+          "A06_insecure_design.md"
+        ],
+        "top3_scores": [
+          0.7834,
+          0.5649,
+          0.4085
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A06_insecure_design.md",
+          "A06_insecure_design.md",
+          "A06_insecure_design.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q13",
+        "topic": "Authentication Failures",
+        "question": "What causes authentication failures and how should passwords and sessions be handled?",
+        "expected_sources": [
+          "A07_authentication_failures.md"
+        ],
+        "top3_sources": [
+          "A07_authentication_failures.md",
+          "A09_security_logging_and_alerting_failures.md",
+          "A07_authentication_failures.md"
+        ],
+        "top3_scores": [
+          0.6632,
+          0.5221,
+          0.4091
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A07_authentication_failures.md",
+          "A07_authentication_failures.md",
+          "owasp_secrets_cheatsheet.txt"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q14",
+        "topic": "Security Logging",
+        "question": "What are security logging and alerting best practices to detect breaches?",
+        "expected_sources": [
+          "A09_security_logging_and_alerting_failures.md"
+        ],
+        "top3_sources": [
+          "A09_security_logging_and_alerting_failures.md",
+          "A09_security_logging_and_alerting_failures.md",
+          "A09_security_logging_and_alerting_failures.md"
+        ],
+        "top3_scores": [
+          0.6518,
+          0.6028,
+          0.4236
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "best_practice",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A09_security_logging_and_alerting_failures.md",
+          "A09_security_logging_and_alerting_failures.md",
+          "A09_security_logging_and_alerting_failures.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q15",
+        "topic": "Exception Handling",
+        "question": "Why is mishandling exceptions or catching bare Exception dangerous?",
+        "expected_sources": [
+          "A10_mishandling_of_exceptional_conditions.md",
+          "code_smells_and_clean_code.md"
+        ],
+        "top3_sources": [
+          "A10_mishandling_of_exceptional_conditions.md",
+          "A10_mishandling_of_exceptional_conditions.md",
+          "A10_mishandling_of_exceptional_conditions.md"
+        ],
+        "top3_scores": [
+          0.7038,
+          0.4866,
+          0.4401
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "finding_explanation",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A10_mishandling_of_exceptional_conditions.md",
+          "A10_mishandling_of_exceptional_conditions.md",
+          "A10_mishandling_of_exceptional_conditions.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q16",
+        "topic": "Clean Code / God Class",
+        "question": "How should I refactor a God Class and reduce cyclomatic complexity?",
+        "expected_sources": [
+          "code_smells_and_clean_code.md"
+        ],
+        "top3_sources": [
+          "code_smells_and_clean_code.md",
+          "code_smells_and_clean_code.md",
+          "code_smells_and_clean_code.md"
+        ],
+        "top3_scores": [
+          0.3712,
+          0.3043,
+          0.2717
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "concept_question",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "code_smells_and_clean_code.md",
+          "code_smells_and_clean_code.md",
+          "code_smells_and_clean_code.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q17",
+        "topic": "Code Smells",
+        "question": "Why are magic numbers and deep nesting considered code smells?",
+        "expected_sources": [
+          "code_smells_and_clean_code.md"
+        ],
+        "top3_sources": [
+          "code_smells_and_clean_code.md",
+          "A01_broken_access_control.md",
+          "A02_security_misconfiguration.md"
+        ],
+        "top3_scores": [
+          0.4528,
+          0.2886,
+          0.2886
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "finding_explanation",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "code_smells_and_clean_code.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q18",
+        "topic": "Java PreparedStatement",
+        "question": "How do Java PreparedStatements defend against SQL injection?",
+        "expected_sources": [
+          "owasp_sqli_cheatsheet.txt",
+          "A05_injection.md"
+        ],
+        "top3_sources": [
+          "A05_injection.md",
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "top3_scores": [
+          0.652,
+          0.6463,
+          0.491
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "finding_explanation",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt",
+          "A05_injection.md"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q19",
+        "topic": "Secret Rotation",
+        "question": "How should secret rotation and vault storage be implemented for credentials?",
+        "expected_sources": [
+          "owasp_secrets_cheatsheet.txt"
+        ],
+        "top3_sources": [
+          "owasp_secrets_cheatsheet.txt",
+          "owasp_secrets_cheatsheet.txt",
+          "A04_cryptographic_failures.md"
+        ],
+        "top3_scores": [
+          0.6286,
+          0.5715,
+          0.3964
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "finding_explanation",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "owasp_secrets_cheatsheet.txt",
+          "owasp_secrets_cheatsheet.txt",
+          "owasp_secrets_cheatsheet.txt"
+        ],
+        "has_citation": true
+      },
+      {
+        "id": "Q20",
+        "topic": "Remediation Follow-Up",
+        "question": "How do I fix finding 1?",
+        "expected_sources": [
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt",
+          "A08_software_or_data_integrity_failures.md"
+        ],
+        "top3_sources": [
+          "owasp_sqli_cheatsheet.txt",
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "top3_scores": [
+          0.4551,
+          0.4457,
+          0.4409
+        ],
+        "hit_at_3": true,
+        "assistant_intent": "fix_request",
+        "assistant_grounded": true,
+        "assistant_citations": [
+          "owasp_sqli_cheatsheet.txt",
+          "A05_injection.md",
+          "owasp_sqli_cheatsheet.txt"
+        ],
+        "has_citation": true
+      }
+    ],
+    "out_of_scope_details": [
+      {
+        "id": "OOS01",
+        "question": "What is the weather forecast in Tokyo tomorrow?",
+        "intent": "out_of_scope",
+        "grounded": false,
+        "citations_count": 0,
+        "declined_properly": true
+      },
+      {
+        "id": "OOS02",
+        "question": "How do I train a golden retriever puppy to sit?",
+        "intent": "out_of_scope",
+        "grounded": false,
+        "citations_count": 0,
+        "declined_properly": true
+      },
+      {
+        "id": "OOS03",
+        "question": "What is the average distance from Earth to Mars in kilometers?",
+        "intent": "out_of_scope",
+        "grounded": false,
+        "citations_count": 0,
+        "declined_properly": true
+      }
+    ]
+  },
+  "report_completeness": {
+    "total_reports": 7,
+    "passed_reports": 7,
+    "pass_rate": 1.0,
+    "details": [
+      {
+        "filename": "JavaComplex.java",
+        "valid_header": true,
+        "page_count": 13,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 13,
+        "embedded_images": 1,
+        "passed": true
+      },
+      {
+        "filename": "JavaMedium.java",
+        "valid_header": true,
+        "page_count": 7,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 8,
+        "embedded_images": 1,
+        "passed": true
+      },
+      {
+        "filename": "JavaSmall.java",
+        "valid_header": true,
+        "page_count": 4,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 3,
+        "embedded_images": 1,
+        "passed": true
+      },
+      {
+        "filename": "py_clean.py",
+        "valid_header": true,
+        "page_count": 3,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 0,
+        "embedded_images": 1,
+        "passed": true
+      },
+      {
+        "filename": "py_complex.py",
+        "valid_header": true,
+        "page_count": 13,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 14,
+        "embedded_images": 1,
+        "passed": true
+      },
+      {
+        "filename": "py_medium.py",
+        "valid_header": true,
+        "page_count": 7,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 8,
+        "embedded_images": 1,
+        "passed": true
+      },
+      {
+        "filename": "py_small.py",
+        "valid_header": true,
+        "page_count": 4,
+        "all_7_sections_present": true,
+        "missing_sections": [],
+        "no_empty_sections": true,
+        "empty_sections": [],
+        "finding_count_matches": true,
+        "expected_finding_count": 3,
+        "embedded_images": 1,
+        "passed": true
+      }
+    ]
+  }
+}

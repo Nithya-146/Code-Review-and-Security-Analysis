@@ -1,0 +1,120 @@
+{
+  "sample_file": "py_complex.py",
+  "language": "python",
+  "complexity": "complex",
+  "expected_issues": [
+    {
+      "type": "csrf",
+      "cwe": "CWE-352",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [15, 17],
+      "description": "CSRF protection disabled via WTF_CSRF_ENABLED = False"
+    },
+    {
+      "type": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [18, 20],
+      "description": "Hardcoded Stripe/AWS credential in STRIPE_SECRET_KEY"
+    },
+    {
+      "type": "insecure_auth",
+      "cwe": "CWE-287",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [42, 46],
+      "description": "Insecure plaintext password comparison in verify_plaintext_login"
+    },
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [50, 53],
+      "description": "SQL injection via string concatenation in find_user_unsafe"
+    },
+    {
+      "type": "xss",
+      "cwe": "CWE-79",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [58, 60],
+      "description": "XSS via render_template_string in render_profile_html"
+    },
+    {
+      "type": "insecure_deserialization",
+      "cwe": "CWE-502",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [62, 64],
+      "description": "Insecure deserialization via pickle.loads"
+    },
+    {
+      "type": "insecure_tls",
+      "cwe": "CWE-295",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [66, 68],
+      "description": "TLS verification disabled via verify=False"
+    },
+    {
+      "type": "broken_access_control",
+      "cwe": "CWE-862",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [71, 74],
+      "description": "Unprotected /admin/delete_user route missing authentication decorator"
+    },
+    {
+      "type": "god_class",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "HIGH",
+      "line_range": [77, 238],
+      "description": "EnterpriseOrderManager exceeds 10 methods (God Class)"
+    },
+    {
+      "type": "magic_number",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "LOW",
+      "line_range": [94, 96],
+      "description": "Magic number literal 0.1735 in compute_loyalty_discount"
+    },
+    {
+      "type": "broad_exception",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [100, 102],
+      "description": "Broad except Exception in safe_parse_coupon"
+    },
+    {
+      "type": "deep_nesting",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [104, 123],
+      "description": "Deep control-flow nesting in classify_order_risk"
+    },
+    {
+      "type": "long_method",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [125, 187],
+      "description": "Long method (>50 lines) in process_fulfillment_pipeline"
+    },
+    {
+      "type": "duplicate_code",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [205, 220],
+      "description": "Duplicate 6+ line code block in normalize_invoice_secondary"
+    }
+  ]
+}
+

@@ -281,23 +281,173 @@ def detect_py_sqli(code: str, tree: Any, tainted: Set[str]) -> List[RuleMatch]:
     return matches
 
 
+def _strip_java_comments(code: str) -> List[str]:
+    """
+    Strips Java single-line (//) and block/Javadoc (/* ... */) comments while
+    preserving exact 1-to-1 line numbering and string literals.
+    """
+    out: List[str] = []
+    i = 0
+    n = len(code)
+    in_block = False
+    in_line = False
+    in_str = False
+    in_char = False
+
+    while i < n:
+        ch = code[i]
+        nxt = code[i + 1] if i + 1 < n else ""
+
+        if in_line:
+            if ch == "\n":
+                in_line = False
+                out.append("\n")
+            else:
+                out.append(" ")
+            i += 1
+        elif in_block:
+            if ch == "*" and nxt == "/":
+                in_block = False
+                out.append("  ")
+                i += 2
+            elif ch == "\n":
+                out.append("\n")
+                i += 1
+            else:
+                out.append(" ")
+                i += 1
+        elif in_str:
+            out.append(ch)
+            if ch == "\\" and nxt:
+                out.append(nxt)
+                i += 2
+            else:
+                if ch == '"':
+                    in_str = False
+                i += 1
+        elif in_char:
+            out.append(ch)
+            if ch == "\\" and nxt:
+                out.append(nxt)
+                i += 2
+            else:
+                if ch == "'":
+                    in_char = False
+                i += 1
+        else:
+            if ch == "/" and nxt == "/":
+                in_line = True
+                out.append("  ")
+                i += 2
+            elif ch == "/" and nxt == "*":
+                in_block = True
+                out.append("  ")
+                i += 2
+            elif ch == '"':
+                in_str = True
+                out.append(ch)
+                i += 1
+            elif ch == "'":
+                in_char = True
+                out.append(ch)
+                i += 1
+            else:
+                out.append(ch)
+                i += 1
+
+    return "".join(out).splitlines()
+
+
 # --- Rule 2: Java SQL Injection ---
 def detect_java_sqli(code: str, _tree: Any, tainted: Set[str]) -> List[RuleMatch]:
-    """Detects Statement.executeQuery/executeUpdate with string concatenation instead of PreparedStatement."""
+    """
+    Detects Statement.executeQuery/executeUpdate with string concatenation
+    (inline, via local String variable, or via StringBuilder/StringBuffer append chains).
+    """
     matches: List[RuleMatch] = []
-    lines = code.splitlines()
+    raw_lines = code.splitlines()
+    lines = _strip_java_comments(code)
     pattern = re.compile(r"\b(executeQuery|executeUpdate)\s*\(\s*([^;]+)\)", re.MULTILINE)
+    concat_var_re = re.compile(r"\bString\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);")
+    sb_decl_re = re.compile(r"\b(?:StringBuilder|StringBuffer)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+(?:StringBuilder|StringBuffer)\s*\(([^;]*)\)")
+    sb_append_re = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:\.\s*append\s*\(([^)]*)\))+")
+    append_arg_re = re.compile(r"\.\s*append\s*\(\s*([^)]+)\s*\)")
+
+    # Track local String variables & StringBuilder/StringBuffer instances carrying dynamic SQL
+    concat_sql_vars: Dict[str, bool] = {}
+    sb_has_sql: Dict[str, bool] = {}
+    sb_dynamic_taint: Dict[str, bool] = {}
+    sql_keywords = ("select ", "insert ", "update ", "delete ", "from ", "where ")
+
+    def _arg_is_dynamic(expr: str) -> Tuple[bool, bool]:
+        """Returns (is_dynamic, is_tainted) for an append() or constructor expression."""
+        cleaned = expr.strip()
+        if not cleaned:
+            return False, False
+        # Pure quoted literal (e.g., "'" or "SELECT * FROM users")
+        if re.fullmatch(r'"[^"]*"|\'[^\']*\'', cleaned):
+            return False, False
+        is_t = any(t in cleaned for t in tainted)
+        return True, is_t
 
     for i, line in enumerate(lines, start=1):
-        if "preparedstatement" in line.lower() or "preparestatement" in line.lower():
+        low = line.lower()
+        if "preparedstatement" in low or "preparestatement" in low:
             continue
+
+        # Track StringBuilder / StringBuffer declarations
+        sbm = sb_decl_re.search(line)
+        if sbm:
+            sb_name, init_arg = sbm.group(1), sbm.group(2)
+            has_sql = any(kw in init_arg.lower() for kw in sql_keywords)
+            dyn, is_t = _arg_is_dynamic(init_arg)
+            sb_has_sql[sb_name] = has_sql
+            if dyn:
+                sb_dynamic_taint[sb_name] = is_t
+
+        # Track .append(...) chains on StringBuilder / StringBuffer
+        if ".append(" in line:
+            sba = sb_append_re.search(line)
+            if sba:
+                sb_name = sba.group(1)
+                for app_arg in append_arg_re.findall(line):
+                    if any(kw in app_arg.lower() for kw in sql_keywords):
+                        sb_has_sql[sb_name] = True
+                    dyn, is_t = _arg_is_dynamic(app_arg)
+                    if dyn:
+                        sb_dynamic_taint[sb_name] = sb_dynamic_taint.get(sb_name, False) or is_t
+
+        # Track String var = ... + ... OR String var = sb.toString()
+        vm = concat_var_re.search(line)
+        if vm:
+            vname, vexpr = vm.group(1), vm.group(2).strip()
+            if "+" in vexpr and any(kw in vexpr.lower() for kw in sql_keywords):
+                is_t = any(t in vexpr for t in tainted)
+                concat_sql_vars[vname] = is_t
+            else:
+                tostr_m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\.toString\(\)$", vexpr)
+                if tostr_m:
+                    sb_ref = tostr_m.group(1)
+                    if sb_has_sql.get(sb_ref) and sb_ref in sb_dynamic_taint:
+                        concat_sql_vars[vname] = sb_dynamic_taint[sb_ref]
+
         m = pattern.search(line)
         if m:
-            arg = m.group(2)
+            arg = m.group(2).strip()
+            raw_snippet = raw_lines[i - 1].strip() if 0 <= i - 1 < len(raw_lines) else line.strip()
+            tostr_m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\.toString\(\)$", arg)
             if "+" in arg:
                 is_taint = any(t in arg for t in tainted)
                 conf = 0.90 if is_taint else 0.50
-                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=is_taint, confidence=conf))
+                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=is_taint, confidence=conf))
+            elif arg in concat_sql_vars:
+                is_taint = concat_sql_vars[arg]
+                conf = 0.92 if is_taint else 0.85
+                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=is_taint, confidence=conf))
+            elif tostr_m and sb_has_sql.get(tostr_m.group(1)) and tostr_m.group(1) in sb_dynamic_taint:
+                is_taint = sb_dynamic_taint[tostr_m.group(1)]
+                conf = 0.92 if is_taint else 0.85
+                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=is_taint, confidence=conf))
 
     return matches
 
@@ -314,25 +464,23 @@ def detect_py_cmdi(code: str, tree: Any, tainted: Set[str]) -> List[RuleMatch]:
         is_vuln = False
         is_taint = False
 
-        # 1. os.system or os.popen
+        # 1. os.system / os.popen or subprocess with shell=True
         if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
             if node.func.value.id == "os" and node.func.attr in ("system", "popen"):
                 is_vuln = True
                 if node.args:
                     is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(node.args[0]))
-        # 2. eval or exec
-        elif isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
-            is_vuln = True
-            if node.args:
-                is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(node.args[0]))
-        # 3. subprocess with shell=True
-        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-            if node.func.value.id == "subprocess":
+            elif node.func.value.id == "subprocess":
                 shell_kw = next((kw for kw in node.keywords if kw.arg == "shell"), None)
                 if shell_kw and isinstance(shell_kw.value, ast.Constant) and shell_kw.value.value is True:
                     is_vuln = True
                     if node.args:
                         is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(node.args[0]))
+        # 2. eval or exec
+        elif isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
+            is_vuln = True
+            if node.args:
+                is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(node.args[0]))
 
         if is_vuln:
             l_start = getattr(node, "lineno", 1)
@@ -405,13 +553,19 @@ def detect_java_xss(code: str, _tree: Any, tainted: Set[str]) -> List[RuleMatch]
     """Detects writing request parameters directly to HTTP response stream without contextual encoding."""
     matches: List[RuleMatch] = []
     lines = code.splitlines()
+    writer_call_re = re.compile(r"\b(?:out|writer|response\.getWriter\(\))\.(?:println|print|write)\s*\((.+)\)")
 
     for i, line in enumerate(lines, start=1):
-        if ("out.println(" in line or "response.getWriter().write(" in line or "response.getWriter().print" in line):
-            if "encode.forhtml" in line.lower():
-                continue
-            if any(src in line.lower() for src in ("getparameter", "scanner")) or any(t in line for t in tainted):
-                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=True, confidence=0.90))
+        low = line.lower()
+        if "encode.forhtml" in low or "escapehtml" in low:
+            continue
+        m = writer_call_re.search(line)
+        if m:
+            arg_str = m.group(1)
+            has_taint = any(src in low for src in ("getparameter", "scanner")) or any(t in arg_str for t in tainted)
+            has_html_concat = ("+" in arg_str and ("<" in arg_str or ">" in arg_str))
+            if has_taint or has_html_concat:
+                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=has_taint, confidence=0.90))
 
     return matches
 
@@ -430,8 +584,9 @@ def detect_py_secrets(code: str, tree: Any, _tainted: Set[str]) -> List[RuleMatc
             if isinstance(t, ast.Name) and SECRET_KEYWORD_PATTERN.search(t.id):
                 target_name = t.id
                 break
-        if not target_name:
-            continue
+            if isinstance(t, ast.Attribute) and SECRET_KEYWORD_PATTERN.search(t.attr):
+                target_name = t.attr
+                break
 
         # Ignore reading from environment variables or configs
         if isinstance(node.value, ast.Call):
@@ -439,10 +594,13 @@ def detect_py_secrets(code: str, tree: Any, _tainted: Set[str]) -> List[RuleMatc
             if "environ" in call_repr or "getenv" in call_repr or "config" in call_repr:
                 continue
 
-        # Check literal string
+        # Check literal string (flag known token formats regardless of variable name,
+        # or high-entropy literals assigned to secret-named variables/attributes)
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             val = node.value.value
-            if len(val) >= 8 and (calculate_shannon_entropy(val) >= 3.0 or KNOWN_TOKEN_PATTERN.search(val)):
+            is_known_token = bool(KNOWN_TOKEN_PATTERN.search(val))
+            is_named_secret = bool(target_name) and len(val) >= 8 and calculate_shannon_entropy(val) >= 3.0
+            if is_known_token or is_named_secret:
                 l_start = getattr(node, "lineno", 1)
                 l_end = getattr(node, "end_lineno", l_start)
                 snippet = "\n".join(lines[l_start - 1 : l_end])
@@ -540,7 +698,15 @@ def detect_py_deserial(code: str, tree: Any, tainted: Set[str]) -> List[RuleMatc
                     is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(node.args[0]))
             elif node.func.value.id == "yaml" and node.func.attr == "load":
                 loader_kw = next((kw for kw in node.keywords if kw.arg == "Loader"), None)
-                if loader_kw is None or "safeloader" not in ast.dump(loader_kw).lower():
+                safe_loaders = {"SafeLoader", "CSafeLoader", "BaseLoader", "CBaseLoader"}
+                loader_name: Optional[str] = None
+                if loader_kw is not None:
+                    val = loader_kw.value
+                    if isinstance(val, ast.Attribute):
+                        loader_name = val.attr
+                    elif isinstance(val, ast.Name):
+                        loader_name = val.id
+                if loader_name not in safe_loaders:
                     is_vuln = True
                     if node.args:
                         is_taint = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(node.args[0]))
@@ -557,12 +723,16 @@ def detect_py_deserial(code: str, tree: Any, tainted: Set[str]) -> List[RuleMatc
 
 # --- Rule 12: Java Insecure Deserialization ---
 def detect_java_deserial(code: str, _tree: Any, tainted: Set[str]) -> List[RuleMatch]:
-    """Detects Java ObjectInputStream.readObject()."""
+    """Detects Java ObjectInputStream.readObject() without emitting duplicate hits on adjacent lines."""
     matches: List[RuleMatch] = []
     lines = code.splitlines()
+    last_hit_line = -10
 
     for i, line in enumerate(lines, start=1):
         if "new ObjectInputStream(" in line or ".readObject()" in line:
+            if i - last_hit_line <= 2:
+                continue
+            last_hit_line = i
             is_taint = any(t in line for t in tainted)
             conf = 0.95 if is_taint else 0.88
             matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=is_taint, confidence=conf))
@@ -583,11 +753,22 @@ def detect_py_traversal(code: str, tree: Any, tainted: Set[str]) -> List[RuleMat
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             val = node.value
-            if isinstance(val, (ast.BinOp, ast.JoinedStr)):
+            is_join_call = (
+                isinstance(val, ast.Call)
+                and isinstance(val.func, ast.Attribute)
+                and val.func.attr == "join"
+            )
+            if isinstance(val, (ast.BinOp, ast.JoinedStr)) or is_join_call:
                 for t in node.targets:
                     if isinstance(t, ast.Name):
                         is_t = any(isinstance(n, ast.Name) and n.id in tainted for n in ast.walk(val))
-                        dynamic_paths[t.id] = (node, is_t)
+                        has_path_var = any(
+                            isinstance(n, ast.Name)
+                            and any(tok in n.id.lower() for tok in ("file", "path", "name", "user", "req", "input"))
+                            for n in ast.walk(val)
+                        )
+                        if isinstance(val, (ast.BinOp, ast.JoinedStr)) or is_t or has_path_var:
+                            dynamic_paths[t.id] = (node, is_t or has_path_var)
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -674,21 +855,47 @@ def detect_py_ssrf_tls(code: str, tree: Any, tainted: Set[str]) -> List[RuleMatc
 
 # --- Rule 16: Java SSRF & Insecure TLS ---
 def detect_java_ssrf_tls(code: str, _tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
-    """Detects disabled certificate validation in Java."""
+    """
+    Detects disabled certificate/hostname validation in Java, including custom
+    HostnameVerifier or X509TrustManager implementations that unconditionally accept.
+    """
     matches: List[RuleMatch] = []
-    lines = code.splitlines()
+    raw_lines = code.splitlines()
+    lines = _strip_java_comments(code)
+    flagged_lines: Set[int] = set()
 
     for i, line in enumerate(lines, start=1):
         lower = line.lower()
+        raw_snippet = raw_lines[i - 1].strip() if 0 <= i - 1 < len(raw_lines) else line.strip()
+
         if "trustallcertificates" in lower or "allow_all_hostname_verifier" in lower or "checkservertrusted" in lower:
-            matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=False, confidence=0.88))
+            flagged_lines.add(i)
+            matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=False, confidence=0.88))
+            continue
+
+        # Detect custom HostnameVerifier (anonymous class or lambda) always returning true
+        if "hostnameverifier" in lower or "setdefaulthostnameverifier" in lower or "sethostnameverifier" in lower:
+            window = "\n".join(lines[i - 1 : min(len(lines), i + 7)])
+            if re.search(r"->\s*true\b", window) or re.search(r"\breturn\s+true\s*;", window):
+                if i not in flagged_lines:
+                    flagged_lines.add(i)
+                    matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=False, confidence=0.90))
+            continue
+
+        # Detect anonymous X509TrustManager implementations (when checkServerTrusted wasn't already flagged)
+        if "new x509trustmanager" in lower:
+            window = "\n".join(lines[i - 1 : min(len(lines), i + 10)])
+            if "checkservertrusted" not in window.lower() and re.search(r"\breturn\s+null\s*;", window):
+                if i not in flagged_lines:
+                    flagged_lines.add(i)
+                    matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=False, confidence=0.88))
 
     return matches
 
 
 # --- Rule 17: Python Broken Access Control / Misconfiguration ---
 def detect_py_auth_config(code: str, tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
-    """Detects debug mode on, CSRF protection disabled, and missing auth checks on sensitive routes."""
+    """Detects debug mode on and missing auth checks on sensitive routes."""
     matches: List[RuleMatch] = []
     lines = code.splitlines()
 
@@ -701,8 +908,6 @@ def detect_py_auth_config(code: str, tree: Any, _tainted: Set[str]) -> List[Rule
             for t in node.targets:
                 if isinstance(t, ast.Name):
                     if t.id.upper() == "DEBUG" and isinstance(node.value, ast.Constant) and node.value.value is True:
-                        is_vuln = True
-                    elif t.id == "WTF_CSRF_ENABLED" and isinstance(node.value, ast.Constant) and node.value.value is False:
                         is_vuln = True
         elif isinstance(node, ast.Call):
             debug_kw = next((kw for kw in node.keywords if kw.arg == "debug"), None)
@@ -732,16 +937,96 @@ def detect_py_auth_config(code: str, tree: Any, _tainted: Set[str]) -> List[Rule
     return matches
 
 
-# --- Rule 18: Java Broken Access Control / Misconfiguration ---
-def detect_java_auth_config(code: str, _tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
-    """Detects CSRF protection disabled in Java Spring Security."""
+# --- Rule 17b: Python CSRF Protection Disabled ---
+def detect_py_csrf(code: str, tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
+    """Detects explicit disabling of CSRF protection (e.g. WTF_CSRF_ENABLED = False)."""
     matches: List[RuleMatch] = []
     lines = code.splitlines()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id.upper() in ("WTF_CSRF_ENABLED", "CSRF_ENABLED"):
+                    if isinstance(node.value, ast.Constant) and node.value.value is False:
+                        l_start = getattr(node, "lineno", 1)
+                        l_end = getattr(node, "end_lineno", l_start)
+                        snippet = "\n".join(lines[l_start - 1 : l_end])
+                        matches.append(RuleMatch(line_start=l_start, line_end=l_end, code_snippet=snippet, is_tainted=False, confidence=0.92))
+
+    return matches
+
+
+# --- Rule 17c: Python Insecure Authentication (Plaintext Password Comparison) ---
+def detect_py_insecure_auth(code: str, tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
+    """Detects plaintext password equality comparison instead of constant-time hash verification."""
+    matches: List[RuleMatch] = []
+    lines = code.splitlines()
+    pw_tokens = ("password", "passwd", "pwd")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.Eq, ast.NotEq)):
+            left_names = [n.id.lower() for n in ast.walk(node.left) if isinstance(n, ast.Name)]
+            right_names = [n.id.lower() for n in ast.walk(node.comparators[0]) if isinstance(n, ast.Name)]
+            # Both sides look like password variables (not comparing against None/empty constant)
+            if (
+                any(any(tok in nm for tok in pw_tokens) for nm in left_names)
+                and any(any(tok in nm for tok in pw_tokens) for nm in right_names)
+            ):
+                l_start = getattr(node, "lineno", 1)
+                l_end = getattr(node, "end_lineno", l_start)
+                snippet = "\n".join(lines[l_start - 1 : l_end])
+                matches.append(RuleMatch(line_start=l_start, line_end=l_end, code_snippet=snippet, is_tainted=True, confidence=0.90))
+
+    return matches
+
+
+# --- Rule 18: Java Broken Access Control / Misconfiguration ---
+def detect_java_auth_config(code: str, _tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
+    """Detects CSRF protection disabled in Java Spring Security (ignoring comments/Javadocs)."""
+    matches: List[RuleMatch] = []
+    raw_lines = code.splitlines()
+    lines = _strip_java_comments(code)
 
     for i, line in enumerate(lines, start=1):
         lower = line.lower()
         if "csrf().disable()" in lower or "csrf.disable()" in lower:
-            matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=False, confidence=0.90))
+            raw_snippet = raw_lines[i - 1].strip() if 0 <= i - 1 < len(raw_lines) else line.strip()
+            matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=raw_snippet, is_tainted=False, confidence=0.90))
+
+    return matches
+
+
+# --- Rule 18b: Java Insecure Authentication (Plaintext Password Comparison) ---
+def detect_java_insecure_auth(code: str, _tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
+    """Detects direct plaintext password.equals(storedPassword) comparisons in Java."""
+    matches: List[RuleMatch] = []
+    lines = code.splitlines()
+    eq_re = re.compile(r"\b([A-Za-z0-9_]*[Pp]ass(?:word|wd)?[A-Za-z0-9_]*)\.equals\(\s*([A-Za-z0-9_]*[Pp]ass(?:word|wd)?[A-Za-z0-9_]*)\s*\)")
+
+    for i, line in enumerate(lines, start=1):
+        if "messagedigest.isequal" in line.lower() or "passwordencoder" in line.lower():
+            continue
+        if eq_re.search(line):
+            matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=True, confidence=0.90))
+
+    return matches
+
+
+# --- Rule 18c: Java Broken Access Control (Unprotected Admin Mapping) ---
+def detect_java_broken_access_control(code: str, _tree: Any, _tainted: Set[str]) -> List[RuleMatch]:
+    """Detects Spring /admin route mappings lacking @PreAuthorize, @Secured, or @RolesAllowed."""
+    matches: List[RuleMatch] = []
+    lines = code.splitlines()
+    mapping_re = re.compile(r"@(?:GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping)\s*\([^)]*(/admin|/manage|/superuser)[^)]*\)", re.IGNORECASE)
+    auth_annos = ("@preauthorize", "@secured", "@rolesallowed")
+
+    for i, line in enumerate(lines, start=1):
+        if mapping_re.search(line):
+            window_start = max(0, i - 4)
+            window_end = min(len(lines), i + 2)
+            nearby = "\n".join(lines[window_start:window_end]).lower()
+            if not any(a in nearby for a in auth_annos):
+                matches.append(RuleMatch(line_start=i, line_end=i, code_snippet=line.strip(), is_tainted=False, confidence=0.88))
 
     return matches
 
@@ -929,14 +1214,36 @@ RULES_REGISTRY: List[SecurityRule] = [
     ),
     SecurityRule(
         id="SEC-PY-AUTH-CONFIG",
-        name="Security Misconfiguration",
+        name="Security Misconfiguration / Broken Access Control",
         owasp=OWASPCategory.A02,
         cwe="CWE-209",
         severity=SeverityLevel.HIGH,
         language="python",
         detect=detect_py_auth_config,
-        explanation="Enabling debug mode in production or disabling CSRF protections exposes diagnostics and leaves routes open to forgery.",
-        suggestion="Ensure DEBUG=False in production configurations and keep CSRF protection enabled."
+        explanation="Enabling debug mode in production or leaving administrative routes unprotected exposes diagnostics and sensitive actions.",
+        suggestion="Ensure DEBUG=False in production and enforce @login_required / role authorization decorators on administrative routes."
+    ),
+    SecurityRule(
+        id="SEC-PY-CSRF",
+        name="Cross-Site Request Forgery (CSRF Disabled)",
+        owasp=OWASPCategory.A01,
+        cwe="CWE-352",
+        severity=SeverityLevel.HIGH,
+        language="python",
+        detect=detect_py_csrf,
+        explanation="Explicitly disabling CSRF protection (WTF_CSRF_ENABLED = False) exposes state-changing requests to cross-site request forgery.",
+        suggestion="Enable CSRF protection (WTF_CSRF_ENABLED = True) and validate anti-CSRF tokens on state-mutating requests."
+    ),
+    SecurityRule(
+        id="SEC-PY-INSECURE-AUTH",
+        name="Insecure Authentication (Plaintext Password Comparison)",
+        owasp=OWASPCategory.A07,
+        cwe="CWE-287",
+        severity=SeverityLevel.HIGH,
+        language="python",
+        detect=detect_py_insecure_auth,
+        explanation="Comparing passwords directly in plaintext with '==' leaks credentials if stored unhashed and is vulnerable to timing side-channels.",
+        suggestion="Store salted adaptive hashes (bcrypt/Argon2) and verify secrets using constant-time hmac.compare_digest() or password hash verifier."
     ),
     SecurityRule(
         id="SEC-JV-AUTH-CONFIG",
@@ -948,6 +1255,28 @@ RULES_REGISTRY: List[SecurityRule] = [
         detect=detect_java_auth_config,
         explanation="Explicitly disabling CSRF protection in Spring Security exposes state-mutating requests to cross-site forgery.",
         suggestion="Keep Spring Security CSRF protection enabled and supply CSRF tokens with state-changing requests."
+    ),
+    SecurityRule(
+        id="SEC-JV-INSECURE-AUTH",
+        name="Insecure Authentication (Plaintext Password Comparison)",
+        owasp=OWASPCategory.A07,
+        cwe="CWE-287",
+        severity=SeverityLevel.HIGH,
+        language="java",
+        detect=detect_java_insecure_auth,
+        explanation="Comparing passwords directly via String.equals() implies plaintext password storage and enables timing attacks.",
+        suggestion="Hash passwords with BCryptPasswordEncoder / Argon2 and verify using constant-time passwordEncoder.matches() or MessageDigest.isEqual()."
+    ),
+    SecurityRule(
+        id="SEC-JV-BAC",
+        name="Broken Access Control (Unprotected Admin Endpoint)",
+        owasp=OWASPCategory.A01,
+        cwe="CWE-862",
+        severity=SeverityLevel.HIGH,
+        language="java",
+        detect=detect_java_broken_access_control,
+        explanation="Administrative Spring endpoint lacks explicit authorization annotations (@PreAuthorize, @Secured, or @RolesAllowed).",
+        suggestion="Enforce role-based authorization by adding @PreAuthorize(\"hasRole('ADMIN')\") to administrative controller endpoints."
     ),
 ]
 

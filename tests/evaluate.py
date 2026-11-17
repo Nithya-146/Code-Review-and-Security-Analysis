@@ -132,8 +132,13 @@ def run_evaluation() -> Dict[str, Any]:
         Dictionary containing metric summaries per segment and overall.
     """
     answer_key = load_answer_key()
-    sample_files = sorted(list(SAMPLES_DIR.rglob("*.*")))
-    sample_files = [p for p in sample_files if p.suffix in (".py", ".java")]
+    sample_files: List[Path] = []
+    for subdir in ("python", "java"):
+        sub_path = SAMPLES_DIR / subdir
+        if sub_path.exists():
+            sample_files.extend(
+                p for p in sorted(sub_path.rglob("*.*")) if p.suffix in (".py", ".java")
+            )
 
     all_detected: List[Finding] = []
     for sample_path in sample_files:

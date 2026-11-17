@@ -1,0 +1,56 @@
+{
+  "sample_file": "inventory_api.py",
+  "language": "python",
+  "complexity": "heldout",
+  "expected_issues": [
+    {
+      "type": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [23, 25],
+      "description": "Hardcoded GitHub personal access token in self.registry_token"
+    },
+    {
+      "type": "insecure_deserialization",
+      "cwe": "CWE-502",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [27, 29],
+      "description": "Insecure YAML deserialization using yaml.load(..., Loader=yaml.UnsafeLoader)"
+    },
+    {
+      "type": "xss",
+      "cwe": "CWE-79",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [33, 35],
+      "description": "Cross-Site Scripting via unescaped Markup(f'<div>{user_note}</div>')"
+    },
+    {
+      "type": "path_traversal",
+      "cwe": "CWE-22",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [37, 39],
+      "description": "Path traversal via direct string concatenation inside open()"
+    },
+    {
+      "type": "deep_nesting",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [41, 61],
+      "description": "Deep control-flow nesting (>4 levels) in allocate_stock_slot"
+    },
+    {
+      "type": "magic_number",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "LOW",
+      "line_range": [65, 67],
+      "description": "Magic number literal 2.20462 in convert_kg_to_pounds"
+    }
+  ]
+}
+

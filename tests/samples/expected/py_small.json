@@ -1,0 +1,32 @@
+{
+  "sample_file": "py_small.py",
+  "language": "python",
+  "complexity": "small",
+  "expected_issues": [
+    {
+      "type": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [12, 14],
+      "description": "Hardcoded AWS access key in SERVICE_API_KEY"
+    },
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [24, 27],
+      "description": "SQL injection via f-string passed to cursor.execute"
+    },
+    {
+      "type": "broad_exception",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [36, 38],
+      "description": "Overly broad except Exception block"
+    }
+  ]
+}
+

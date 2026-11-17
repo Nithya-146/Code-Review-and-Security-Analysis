@@ -1,0 +1,7 @@
+{
+  "sample_file": "clean_scheduler.py",
+  "language": "python",
+  "complexity": "clean",
+  "expected_issues": []
+}
+

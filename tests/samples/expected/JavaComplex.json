@@ -1,0 +1,111 @@
+{
+  "sample_file": "JavaComplex.java",
+  "language": "java",
+  "complexity": "complex",
+  "expected_issues": [
+    {
+      "type": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [22, 24],
+      "description": "Hardcoded API secret in PAYMENT_API_SECRET"
+    },
+    {
+      "type": "csrf",
+      "cwe": "CWE-352",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [26, 28],
+      "description": "CSRF protection disabled via http.csrf().disable()"
+    },
+    {
+      "type": "insecure_auth",
+      "cwe": "CWE-287",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [31, 36],
+      "description": "Insecure plaintext password comparison in verifyPlaintextLogin"
+    },
+    {
+      "type": "broken_access_control",
+      "cwe": "CWE-862",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [39, 42],
+      "description": "Unprotected @GetMapping('/admin/export') endpoint missing authorization"
+    },
+    {
+      "type": "sql_injection",
+      "cwe": "CWE-89",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [45, 48],
+      "description": "SQL injection in findUserUnsafe"
+    },
+    {
+      "type": "xss",
+      "cwe": "CWE-79",
+      "category": "security",
+      "expected_severity": "HIGH",
+      "line_range": [51, 53],
+      "description": "XSS in renderProfileHtml via writer.write"
+    },
+    {
+      "type": "insecure_deserialization",
+      "cwe": "CWE-502",
+      "category": "security",
+      "expected_severity": "CRITICAL",
+      "line_range": [56, 59],
+      "description": "Insecure deserialization via ObjectInputStream.readObject"
+    },
+    {
+      "type": "god_class",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "HIGH",
+      "line_range": [78, 260],
+      "description": "EnterpriseOrderService exceeds 10 methods (God Class)"
+    },
+    {
+      "type": "magic_number",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "LOW",
+      "line_range": [97, 99],
+      "description": "Magic number literal 89.25 in computeLoyaltyDiscount"
+    },
+    {
+      "type": "broad_exception",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [104, 107],
+      "description": "Overly broad catch (Exception e) in safeParseCoupon"
+    },
+    {
+      "type": "deep_nesting",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [111, 134],
+      "description": "Deep control-flow nesting in classifyOrderRisk"
+    },
+    {
+      "type": "long_method",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [136, 203],
+      "description": "Long method (>50 lines) in processFulfillmentPipeline"
+    },
+    {
+      "type": "duplicate_code",
+      "cwe": null,
+      "category": "code_quality",
+      "expected_severity": "MEDIUM",
+      "line_range": [220, 236],
+      "description": "Duplicate 6+ line block in normalizeInvoiceSecondary"
+    }
+  ]
+}
