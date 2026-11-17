@@ -14,6 +14,7 @@ Preserves the Milestone 2 pure-black / deep-navy / bright-blue design and extend
        expandable KB citations, starter prompts, follow-up buttons, and Clear Chat control
 """
 
+from datetime import datetime
 import html
 import logging
 import os
@@ -87,6 +88,11 @@ except (ImportError, ModuleNotFoundError):
         generate_markdown_report,
         generate_html_report,
     )
+
+try:
+    from app.report_generator import generate_report as generate_pdf_report
+except (ImportError, ModuleNotFoundError):
+    from report_generator import generate_report as generate_pdf_report
 
 try:
     from app.ui_components import (
@@ -552,6 +558,8 @@ def _execute_analysis_pipeline(
         st.session_state["upload_filename"] = upload_filename
         st.session_state["chat_history"] = []
         st.session_state.pop("pending_chat_question", None)
+        st.session_state.pop("cached_pdf_report", None)
+        st.session_state.pop("cached_pdf_key", None)
 
         progress_bar.progress(100, text="Analysis complete!")
         progress_bar.empty()
@@ -699,6 +707,36 @@ def _render_overview_tab(
             st.success("🎉 No issues found — code is clean.")
 
 
+def _get_cached_pdf_bytes(
+    res: Dict[str, Any],
+    code_text: str,
+    filename: str,
+    language: str,
+) -> Optional[bytes]:
+    """Generates and caches PDF report bytes in session_state for the active analysis."""
+    cache_key = (
+        filename,
+        language,
+        len(code_text or ""),
+        len(res.get("findings", []) or []),
+        len(res.get("remediations", []) or []),
+    )
+    if (
+        st.session_state.get("cached_pdf_key") == cache_key
+        and isinstance(st.session_state.get("cached_pdf_report"), (bytes, bytearray))
+    ):
+        return bytes(st.session_state["cached_pdf_report"])
+
+    try:
+        pdf_bytes = generate_pdf_report(res, code_text or "", filename, language)
+        st.session_state["cached_pdf_key"] = cache_key
+        st.session_state["cached_pdf_report"] = pdf_bytes
+        return pdf_bytes
+    except Exception:
+        logger.exception("PDF report generation failed")
+        return None
+
+
 def _render_findings_tab(
     res: Dict[str, Any],
     code_text: str,
@@ -708,6 +746,24 @@ def _render_findings_tab(
     findings: List[Dict[str, Any]] = res.get("findings", [])
     remediations: List[Dict[str, Any]] = res.get("remediations", [])
     rem_map = map_remediations_by_finding(remediations)
+    target_filename = str(st.session_state.get("upload_filename", res.get("filename", "submission")))
+    base_name = Path(target_filename).stem
+    pdf_date = datetime.now().strftime("%Y-%m-%d")
+    pdf_bytes = _get_cached_pdf_bytes(res, code_text, target_filename, display_lang)
+
+    hdr_col, pdf_col = st.columns([3.4, 1.3])
+    with hdr_col:
+        st.markdown("<div class='section-title'>Filter &amp; Explore Findings</div>", unsafe_allow_html=True)
+    with pdf_col:
+        if pdf_bytes:
+            st.download_button(
+                label="📕 Download PDF report",
+                data=pdf_bytes,
+                file_name=f"review_{base_name}_{pdf_date}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_pdf_report_findings",
+            )
 
     if not findings:
         st.success("🎉 No security vulnerabilities or code quality issues were detected.")
@@ -717,7 +773,6 @@ def _render_findings_tab(
         return
 
     sev_counts = get_severity_counts(findings)
-    st.markdown("<div class='section-title'>Filter &amp; Explore Findings</div>", unsafe_allow_html=True)
 
     f1, f2, f3, f4 = st.columns([1.2, 1.1, 1.1, 1.3])
     with f1:
@@ -906,10 +961,27 @@ def _render_pr_summary_tab(
     pr_md_text = export_pr_markdown(res)
     json_results_text = export_results_json(res)
     html_report_text = generate_html_report(report_data)
-    base_name = Path(str(report_data.get("filename", "submission"))).stem
+    target_filename = str(report_data.get("filename", res.get("filename", "submission")))
+    target_lang = str(report_data.get("language", res.get("language", "python")))
+    base_name = Path(target_filename).stem
+    pdf_date = datetime.now().strftime("%Y-%m-%d")
+    cached_code = str(st.session_state.get("current_code", "") or "")
+    pdf_bytes = _get_cached_pdf_bytes(res, cached_code, target_filename, target_lang)
 
-    col_dl1, col_dl2, col_dl3 = st.columns(3)
+    col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
     with col_dl1:
+        if pdf_bytes:
+            st.download_button(
+                label="📕 Download PDF report",
+                data=pdf_bytes,
+                file_name=f"review_{base_name}_{pdf_date}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="dl_pdf_report_pr",
+            )
+        else:
+            st.warning("⚠️ PDF export unavailable.")
+    with col_dl2:
         st.download_button(
             label="📄 Download Markdown Report (.md)",
             data=pr_md_text,
@@ -918,7 +990,7 @@ def _render_pr_summary_tab(
             use_container_width=True,
             key="dl_pr_markdown",
         )
-    with col_dl2:
+    with col_dl3:
         st.download_button(
             label="📦 Download Full Results (.json)",
             data=json_results_text,
@@ -927,7 +999,7 @@ def _render_pr_summary_tab(
             use_container_width=True,
             key="dl_full_json",
         )
-    with col_dl3:
+    with col_dl4:
         st.download_button(
             label="🌐 Download HTML Report (.html)",
             data=html_report_text,
