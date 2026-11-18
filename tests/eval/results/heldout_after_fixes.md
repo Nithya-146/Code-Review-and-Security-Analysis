@@ -18,7 +18,7 @@
 | **Severity Classification Accuracy** | 100.0% (`17 / 17`) | **100.0%** (`22 / 22`) | Maintained |
 | **Severity Consistency (3 runs)** | 100.0% (`20 / 20`) | **100.0%** (`22 / 22`) | Maintained |
 | **Remediation Specific / Pattern-Removed** | 80.0% (`16 / 20`) | **77.3%** (`17 / 22`) | 5 structural/untemplated items |
-| **Remediation Syntax-Valid Rate** | 100.0% (`20 / 20`) | **95.5%** (`21 / 22`) | 1 newly detected Java TLS anonymous class |
+| **Remediation Syntax-Valid Rate** | 100.0% (`20 / 20`) | **95.5%** (`21 / 22`) | 1 failing item: `SEC-003` (`CWE-502`, Python `yaml.UnsafeLoader` in `inventory_api.py`); `SEC-004` (`CWE-295`, Java anonymous `HostnameVerifier`) is syntax-valid but not specific and not pattern-removed |
 | **Remediation Two-Tier Verified Rate** | 60.0% (`12 / 20`) | **68.2%** (`15 / 22`) | **+8.2 pp** |
 | **PDF Report Completeness** | 100.0% (`6 / 6`) | **100.0%** (`6 / 6`) | Maintained |
 
