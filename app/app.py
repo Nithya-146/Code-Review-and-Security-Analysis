@@ -42,6 +42,9 @@ for _p in (str(_APP_DIR), str(_APP_DIR) + "\\", str(_APP_DIR) + "/"):
         sys.path.remove(_p)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+# Keep _APP_DIR as low-priority fallback so `from ui_components import ...` resolves cleanly
+if str(_APP_DIR) not in sys.path:
+    sys.path.append(str(_APP_DIR))
 
 if "app" in sys.modules and not hasattr(sys.modules["app"], "__path__"):
     del sys.modules["app"]
@@ -100,9 +103,12 @@ try:
         SEV_COLORS,
         badge_html,
         build_code_viewer_html,
+        build_dimension_bar_chart_svg,
         build_health_gauge_svg,
         build_prioritized_fixes_table_html,
+        build_radar_chart_svg,
         build_severity_donut_svg,
+        calculate_code_health_dimensions,
         export_pr_markdown,
         export_results_json,
         extract_severity_str,
@@ -124,9 +130,12 @@ except (ImportError, ModuleNotFoundError):
         SEV_COLORS,
         badge_html,
         build_code_viewer_html,
+        build_dimension_bar_chart_svg,
         build_health_gauge_svg,
         build_prioritized_fixes_table_html,
+        build_radar_chart_svg,
         build_severity_donut_svg,
+        calculate_code_health_dimensions,
         export_pr_markdown,
         export_results_json,
         extract_severity_str,
@@ -371,6 +380,44 @@ button[data-baseweb="tab"][aria-selected="true"] {
     color: #94A3B8;
     margin-top: 0.4rem;
 }
+
+/* ── bottom-left floating chatbot shortcut ────────────────────────── */
+.floating-chatbot-dock {
+    position: fixed !important;
+    bottom: 24px !important;
+    left: 24px !important;
+    z-index: 999999 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    background: #07101F !important;
+    border: 1.5px solid #38BDF8 !important;
+    border-radius: 30px !important;
+    padding: 10px 18px !important;
+    color: #F1F5F9 !important;
+    font-size: 0.92rem !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    box-shadow: 0 4px 24px rgba(56, 189, 248, 0.4) !important;
+    transition: all 0.2s ease-in-out !important;
+    text-decoration: none !important;
+    user-select: none !important;
+}
+.floating-chatbot-dock:hover {
+    background: #0E2238 !important;
+    border-color: #60A5FA !important;
+    box-shadow: 0 6px 30px rgba(56, 189, 248, 0.7) !important;
+    transform: translateY(-2px) !important;
+    color: #38BDF8 !important;
+}
+.floating-chatbot-dock .pulse-dot {
+    width: 9px !important;
+    height: 9px !important;
+    border-radius: 50% !important;
+    background: #10B981 !important;
+    box-shadow: 0 0 10px #10B981 !important;
+    display: inline-block !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -602,6 +649,76 @@ def _render_overview_tab(
         grade = get_health_grade(score)
 
     score_color = get_health_score_color(score)
+
+    # ── Multi-Dimensional Code Health Bar Analysis ────────────────────────
+    dim_scores = calculate_code_health_dimensions(findings, hs)
+
+    has_crit = sev_counts.get("CRITICAL", 0) > 0
+    has_high = sev_counts.get("HIGH", 0) > 0
+    if has_crit or has_high:
+        qg_status = "Failing"
+        qg_color = "#EF4444"
+        qg_icon = "🔴"
+        qg_msg = "Critical Vulnerabilities Detected"
+    elif score < 75 or sev_counts.get("MEDIUM", 0) >= 3:
+        qg_status = "Warning"
+        qg_color = "#F59E0B"
+        qg_icon = "🟡"
+        qg_msg = "Quality/Security Smells Detected"
+    else:
+        qg_status = "Passing"
+        qg_color = "#10B981"
+        qg_icon = "🟢"
+        qg_msg = "Clean Build"
+
+    bar_chart_svg = build_dimension_bar_chart_svg(dim_scores)
+
+    st.markdown(
+        "<div style='background:#07101F;border:1px solid #1E3A5F;border-radius:12px;padding:1.3rem 1.4rem;margin-bottom:1.5rem;box-shadow:0 4px 20px rgba(0,0,0,0.35);'>"
+        "<div style='color:#F1F5F9;font-size:1.35rem;font-weight:700;margin-bottom:0.25rem;'>Multi-Dimensional Code Health Analysis</div>",
+        unsafe_allow_html=True,
+    )
+
+    col_bar_chart, col_bar_info = st.columns([1.25, 1.0])
+    with col_bar_chart:
+        st.markdown(bar_chart_svg, unsafe_allow_html=True)
+    with col_bar_info:
+        st.markdown(
+            f"<div style='padding-top:0.2rem;'>"
+            f"<p style='color:#CBD5E1;font-size:0.92rem;line-height:1.45;margin-bottom:0.85rem;'>"
+            f"This multi-axis fingerprint evaluates your code across 5 core enterprise dimensions derived from agent findings:"
+            f"</p>"
+            f"<div style='display:flex;flex-direction:column;gap:0.4rem;font-size:0.92rem;color:#F1F5F9;'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;background:#050B14;border:1px solid #1E3A5F;border-radius:6px;padding:0.4rem 0.75rem;'>"
+            f"<span>🛡️ <strong style='color:#94A3B8;'>Security:</strong></span> <span style='color:{get_health_score_color(dim_scores['Security'])};font-weight:700;'>{dim_scores['Security']}/100</span></div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;background:#050B14;border:1px solid #1E3A5F;border-radius:6px;padding:0.4rem 0.75rem;'>"
+            f"<span>🛠️ <strong style='color:#94A3B8;'>Maintainability:</strong></span> <span style='color:{get_health_score_color(dim_scores['Maintainability'])};font-weight:700;'>{dim_scores['Maintainability']}/100</span></div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;background:#050B14;border:1px solid #1E3A5F;border-radius:6px;padding:0.4rem 0.75rem;'>"
+            f"<span>⚡ <strong style='color:#94A3B8;'>Performance:</strong></span> <span style='color:{get_health_score_color(dim_scores['Performance'])};font-weight:700;'>{dim_scores['Performance']}/100</span></div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;background:#050B14;border:1px solid #1E3A5F;border-radius:6px;padding:0.4rem 0.75rem;'>"
+            f"<span>🧩 <strong style='color:#94A3B8;'>Complexity:</strong></span> <span style='color:{get_health_score_color(dim_scores['Complexity'])};font-weight:700;'>{dim_scores['Complexity']}/100</span></div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;background:#050B14;border:1px solid #1E3A5F;border-radius:6px;padding:0.4rem 0.75rem;'>"
+            f"<span>🎯 <strong style='color:#94A3B8;'>Reliability:</strong></span> <span style='color:{get_health_score_color(dim_scores['Reliability'])};font-weight:700;'>{dim_scores['Reliability']}/100</span></div>"
+            f"</div>"
+            f"<div style='color:#64748B;font-size:0.8rem;margin-top:0.75rem;'>"
+            f"Scored in real-time by the Multi-Agent Orchestration Engine."
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Quality Gate status strip
+    st.markdown(
+        f"<div style='margin-top:0.9rem;display:inline-flex;align-items:center;gap:0.6rem;background:#030712;border:1px solid #1E3A5F;border-radius:24px;padding:0.45rem 1.1rem;font-size:0.9rem;'>"
+        f"<span>{qg_icon}</span>"
+        f"<span style='color:#F1F5F9;font-weight:600;'>Quality Gate Status:</span>"
+        f"<span style='color:{qg_color};font-weight:700;'>{qg_status} ({qg_msg} • Grade: {grade})</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Top Row: Gauge + Executive Overview & Top Risks ───────────────────
     col_gauge, col_summary = st.columns([1, 2])
@@ -1447,3 +1564,31 @@ with tab_pr:
 
 with tab_chat:
     _render_assistant_tab(cached_res, code_text=cached_code, lang_key=cached_lang)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FLOATING CHATBOT SHORTCUT (BOTTOM-LEFT CORNER)
+# ═══════════════════════════════════════════════════════════════════════════
+st.markdown(
+    """
+    <div class="floating-chatbot-dock" id="floating-chatbot-dock" onclick="(function(){
+        try {
+            var tabs = document.querySelectorAll('button[data-baseweb=\\'tab\\']');
+            if (!tabs || tabs.length < 4) {
+                tabs = window.parent.document.querySelectorAll('button[data-baseweb=\\'tab\\']');
+            }
+            if (tabs && tabs.length >= 4) {
+                tabs[3].click();
+                tabs[3].scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+        } catch(e) {
+            console.error('Chatbot shortcut navigation error:', e);
+        }
+    })()" title="Jump to Conversational AI Code Assistant">
+        <span class="pulse-dot"></span>
+        <span style="font-size: 1.15rem;">💬</span>
+        <span>Ask AI Chatbot</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+

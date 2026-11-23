@@ -31,9 +31,12 @@ from app.schemas import (
 from app.ui_components import (
     badge_html,
     build_code_viewer_html,
+    build_dimension_bar_chart_svg,
     build_health_gauge_svg,
     build_prioritized_fixes_table_html,
+    build_radar_chart_svg,
     build_severity_donut_svg,
+    calculate_code_health_dimensions,
     export_pr_markdown,
     export_results_json,
     extract_severity_str,
@@ -405,6 +408,79 @@ def test_validate_submission_input_and_sample_loader():
     java_code, java_name = load_sample_code("java")
     assert py_name == "planted_security.py" and "sqlite3" in py_code
     assert java_name == "PlantedSecurity.java" and "PlantedSecurity" in java_code
+
+
+# ── Radar Chart & Dimension Tests ─────────────────────────────────────────────
+
+def test_code_health_dimensions_and_radar_chart():
+    """Verifies 5-dimension scoring and SVG radar chart generation."""
+    # 1. Clean findings -> all 5 dimensions should score 100
+    clean_dims = calculate_code_health_dimensions([])
+    assert clean_dims == {
+        "Maintainability": 100,
+        "Security": 100,
+        "Reliability": 100,
+        "Complexity": 100,
+        "Performance": 100,
+    }
+
+    # 2. Vulnerable findings -> appropriate deductions
+    findings = [
+        _make_finding(
+            fid="SEC-001",
+            title="Command Injection",
+            category="Security Vulnerability",
+            cwe_id="CWE-78",
+            severity=SeverityLevel.CRITICAL,
+        ),
+        _make_finding(
+            fid="SEC-002",
+            title="Hardcoded Secret",
+            category="Security Vulnerability",
+            cwe_id="CWE-798",
+            severity=SeverityLevel.HIGH,
+        ),
+        _make_finding(
+            fid="CODE-001",
+            title="Long Method & High Cyclomatic Complexity",
+            category="Code Smell",
+            severity=SeverityLevel.HIGH,
+        ),
+        _make_finding(
+            fid="REL-001",
+            title="Empty Catch Block",
+            category="Reliability Warning",
+            severity=SeverityLevel.HIGH,
+        ),
+    ]
+    dims = calculate_code_health_dimensions(findings)
+    assert dims["Security"] <= 60  # Critical (-25) + High (-15)
+    assert dims["Maintainability"] <= 85  # Smell (-15)
+    assert dims["Complexity"] <= 85  # Complexity keyword (-20)
+    assert dims["Reliability"] <= 85  # Catch/except (-20)
+    assert dims["Performance"] == 100  # No performance findings
+
+    # 3. SVG generation contains all required elements
+    svg = build_radar_chart_svg(dims)
+    assert "<svg" in svg
+    assert "Maintainability" in svg
+    assert "Security" in svg
+    assert "Reliability" in svg
+    assert "Complexity" in svg
+    assert "Performance" in svg
+    assert "<polygon" in svg
+    assert "aria-label='Code Health Radar Chart'" in svg
+
+    # 4. Bar chart SVG generation contains all 5 dimension bars and scores
+    bar_svg = build_dimension_bar_chart_svg(dims)
+    assert "<svg" in bar_svg
+    assert "Security" in bar_svg
+    assert "Maintainability" in bar_svg
+    assert "Performance" in bar_svg
+    assert "Complexity" in bar_svg
+    assert "Reliability" in bar_svg
+    assert "<rect" in bar_svg
+    assert "aria-label='Code Health Dimension Bar Chart'" in bar_svg
 
 
 # ── Smoke Test: Streamlit AppTest ────────────────────────────────────────────

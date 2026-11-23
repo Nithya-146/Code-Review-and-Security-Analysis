@@ -544,3 +544,271 @@ def build_prioritized_fixes_table_html(prioritized_fixes: List[Any]) -> str:
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MULTI-DIMENSIONAL CODE HEALTH RADAR (5 ENTERPRISE DIMENSIONS)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def calculate_code_health_dimensions(
+    findings: List[Any],
+    health_score_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, int]:
+    """
+    Computes 5 enterprise code health dimensions (0-100) from agent findings:
+    1. Security: CVSS / OWASP vulnerabilities (SQLi, cmdi, deserialization, secrets, XSS, etc.)
+    2. Maintainability: Code smells, god classes, long methods, duplicate lines, naming anti-patterns
+    3. Performance: Inefficient operations, nested loops, inefficient regex, tight string concats
+    4. Complexity: Cyclomatic complexity (>10), deep nesting (>4), excessive parameters (>5)
+    5. Reliability: Error handling, empty catch, broad exceptions, resource leaks, null pointer risks
+    """
+    sec = 100
+    maint = 100
+    perf = 100
+    comp = 100
+    rel = 100
+
+    for f in findings:
+        sev = extract_severity_str(f).upper()
+        cat = str(_get_val(f, "category", "")).lower()
+        title = str(_get_val(f, "title", "")).lower()
+        desc = str(_get_val(f, "description", "")).lower()
+        owasp = str(_get_val(f, "owasp_category", "")).lower()
+        cwe = str(_get_val(f, "cwe_id", "")).lower()
+        combined = f"{cat} {title} {desc} {owasp} {cwe}"
+
+        # Severity penalties
+        sev_pen = (
+            25
+            if sev == "CRITICAL"
+            else (15 if sev == "HIGH" else (8 if sev == "MEDIUM" else (3 if sev == "LOW" else 1)))
+        )
+
+        # 1. Security
+        is_security = bool(
+            owasp
+            or cwe
+            or "injection" in combined
+            or "security" in combined
+            or "secret" in combined
+            or "crypto" in combined
+            or "auth" in combined
+            or "xss" in combined
+            or "csrf" in combined
+            or "ssrf" in combined
+            or "deserial" in combined
+        )
+        if is_security:
+            sec -= sev_pen
+
+        # 2. Maintainability
+        is_maint = bool(
+            "smell" in combined
+            or "maintainability" in combined
+            or "naming" in combined
+            or "magic" in combined
+            or "god" in combined
+            or "long" in combined
+            or "duplicate" in combined
+            or "style" in combined
+        )
+        if is_maint:
+            m_pen = 15 if sev in ("CRITICAL", "HIGH") else (10 if sev == "MEDIUM" else 5)
+            maint -= m_pen
+
+        # 3. Performance
+        is_perf = bool(
+            "performance" in combined
+            or "slow" in combined
+            or "regex" in combined
+            or "nested loop" in combined
+            or "io in" in combined
+            or "concat" in combined
+            or "inefficient" in combined
+        )
+        if is_perf:
+            p_pen = 20 if sev in ("CRITICAL", "HIGH") else 12
+            perf -= p_pen
+
+        # 4. Complexity
+        is_comp = bool(
+            "complexity" in combined
+            or "cyclomatic" in combined
+            or "nesting" in combined
+            or "parameter" in combined
+            or "too many" in combined
+            or "deep" in combined
+        )
+        if is_comp:
+            c_pen = 20 if sev in ("CRITICAL", "HIGH") else (12 if sev == "MEDIUM" else 8)
+            comp -= c_pen
+
+        # 5. Reliability
+        is_rel = bool(
+            "reliability" in combined
+            or "catch" in combined
+            or "except" in combined
+            or "leak" in combined
+            or "unclosed" in combined
+            or "null" in combined
+            or "none" in combined
+            or "resource" in combined
+            or "handle" in combined
+        )
+        if is_rel:
+            r_pen = 20 if sev in ("CRITICAL", "HIGH") else (12 if sev == "MEDIUM" else 6)
+            rel -= r_pen
+
+    return {
+        "Maintainability": max(0, min(100, maint)),
+        "Security": max(0, min(100, sec)),
+        "Reliability": max(0, min(100, rel)),
+        "Complexity": max(0, min(100, comp)),
+        "Performance": max(0, min(100, perf)),
+    }
+
+
+def build_radar_chart_svg(
+    dimensions: Dict[str, int],
+    width: int = 360,
+    height: int = 310,
+) -> str:
+    """
+    Builds an SVG polar radar (spider) chart for the 5 enterprise dimensions:
+    Maintainability (top), Security (right), Reliability (bottom-right),
+    Complexity (bottom-left), and Performance (top-left).
+    """
+    cx = width / 2.0
+    cy = height / 2.0 - 5.0
+    R = 92.0
+
+    # 5 vertices clockwise starting from top (-90 degrees)
+    keys = ["Maintainability", "Security", "Reliability", "Complexity", "Performance"]
+    angles = [-math.pi / 2.0 + i * (2.0 * math.pi / 5.0) for i in range(5)]
+
+    # Grid rings
+    grid_rings = []
+    for lvl in [0.2, 0.4, 0.6, 0.8, 1.0]:
+        r_lvl = R * lvl
+        pts = [
+            f"{cx + r_lvl * math.cos(a):.1f},{cy + r_lvl * math.sin(a):.1f}"
+            for a in angles
+        ]
+        grid_rings.append(
+            f"<polygon points='{' '.join(pts)}' fill='none' stroke='#1E293B' stroke-width='1.2' opacity='0.85'/>"
+        )
+
+    # Axis lines
+    axis_lines = []
+    for a in angles:
+        x2 = cx + R * math.cos(a)
+        y2 = cy + R * math.sin(a)
+        axis_lines.append(
+            f"<line x1='{cx:.1f}' y1='{cy:.1f}' x2='{x2:.1f}' y2='{y2:.1f}' stroke='#1E293B' stroke-width='1.2' opacity='0.85'/>"
+        )
+
+    # Scale numbers along the horizontal axis
+    scale_text = (
+        f"<text x='{cx + 17:.1f}' y='{cy - 3:.1f}' fill='#475569' font-size='8' font-family='monospace'>20</text>"
+        f"<text x='{cx + 35:.1f}' y='{cy - 3:.1f}' fill='#475569' font-size='8' font-family='monospace'>40</text>"
+        f"<text x='{cx + 53:.1f}' y='{cy - 3:.1f}' fill='#475569' font-size='8' font-family='monospace'>60</text>"
+        f"<text x='{cx + 71:.1f}' y='{cy - 3:.1f}' fill='#475569' font-size='8' font-family='monospace'>80</text>"
+        f"<text x='{cx + 87:.1f}' y='{cy - 3:.1f}' fill='#475569' font-size='8' font-family='monospace'>100</text>"
+    )
+
+    # Data points
+    data_pts = []
+    dots = []
+    for key, a in zip(keys, angles):
+        val = max(0, min(100, int(dimensions.get(key, 100))))
+        r_val = (val / 100.0) * R
+        px = cx + r_val * math.cos(a)
+        py = cy + r_val * math.sin(a)
+        data_pts.append(f"{px:.1f},{py:.1f}")
+        dots.append(
+            f"<circle cx='{px:.1f}' cy='{py:.1f}' r='4' fill='#38BDF8' stroke='#0F172A' stroke-width='1.5'/>"
+        )
+
+    poly_pts_str = " ".join(data_pts)
+    data_polygon = (
+        f"<polygon points='{poly_pts_str}' "
+        f"fill='rgba(56, 189, 248, 0.25)' stroke='#38BDF8' stroke-width='2.5' stroke-linejoin='round'/>"
+    )
+
+    # Labels with optimal offsets
+    label_elements = [
+        f"<text x='{cx:.1f}' y='{cy - R - 12:.1f}' text-anchor='middle' fill='#CBD5E1' font-size='11' font-weight='600'>Maintainability</text>",
+        f"<text x='{cx + R * math.cos(angles[1]) + 8:.1f}' y='{cy + R * math.sin(angles[1]) + 4:.1f}' text-anchor='start' fill='#CBD5E1' font-size='11' font-weight='600'>Security</text>",
+        f"<text x='{cx + R * math.cos(angles[2]) + 4:.1f}' y='{cy + R * math.sin(angles[2]) + 15:.1f}' text-anchor='start' fill='#CBD5E1' font-size='11' font-weight='600'>Reliability</text>",
+        f"<text x='{cx + R * math.cos(angles[3]) - 4:.1f}' y='{cy + R * math.sin(angles[3]) + 15:.1f}' text-anchor='end' fill='#CBD5E1' font-size='11' font-weight='600'>Complexity</text>",
+        f"<text x='{cx + R * math.cos(angles[4]) - 8:.1f}' y='{cy + R * math.sin(angles[4]) + 4:.1f}' text-anchor='end' fill='#CBD5E1' font-size='11' font-weight='600'>Performance</text>",
+    ]
+
+    return (
+        f"<div style='display:flex;justify-content:center;align-items:center;'>"
+        f"<svg width='{width}' height='{height}' viewBox='0 0 {width} {height}' role='img' aria-label='Code Health Radar Chart'>"
+        f"{''.join(grid_rings)}"
+        f"{''.join(axis_lines)}"
+        f"{scale_text}"
+        f"{data_polygon}"
+        f"{''.join(dots)}"
+        f"{''.join(label_elements)}"
+        f"</svg>"
+        f"</div>"
+    )
+
+
+def build_dimension_bar_chart_svg(
+    dimensions: Dict[str, int],
+    width: int = 460,
+    height: int = 245,
+) -> str:
+    """
+    Builds an SVG horizontal bar chart for the 5 enterprise dimensions:
+    Security, Maintainability, Performance, Complexity, and Reliability.
+    """
+    dims = [
+        ("Security", "🛡️"),
+        ("Maintainability", "🛠️"),
+        ("Performance", "⚡"),
+        ("Complexity", "🧩"),
+        ("Reliability", "🎯"),
+    ]
+    svg_parts = [
+        f"<div style='display:flex;justify-content:center;align-items:center;'>",
+        f"<svg width='{width}' height='{height}' viewBox='0 0 {width} {height}' role='img' aria-label='Code Health Dimension Bar Chart'>",
+        "<style>.dim-lbl{fill:#CBD5E1;font-size:12px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;}.dim-score{font-size:12px;font-weight:700;font-family:monospace;}</style>",
+    ]
+    track_x = 135
+    track_w = 230
+
+    # Benchmark grid lines at 25%, 50%, 75%, 100%
+    for pct in [0.25, 0.50, 0.75, 1.0]:
+        gx = track_x + track_w * pct
+        svg_parts.append(
+            f"<line x1='{gx:.1f}' y1='10' x2='{gx:.1f}' y2='220' stroke='#1E3A5F' stroke-width='1' stroke-dasharray='3,3' opacity='0.7'/>"
+        )
+        svg_parts.append(
+            f"<text x='{gx:.1f}' y='234' text-anchor='middle' fill='#64748B' font-size='9' font-family='monospace'>{int(pct*100)}%</text>"
+        )
+
+    for i, (name, icon) in enumerate(dims):
+        y = 15 + i * 42
+        score = max(0, min(100, int(dimensions.get(name, 100))))
+        color = get_health_score_color(score)
+        bar_w = max(6, int(track_w * (score / 100.0)))
+
+        # Label with icon
+        svg_parts.append(f"<text x='8' y='{y + 11}' class='dim-lbl'>{icon} {name}</text>")
+        # Track background
+        svg_parts.append(f"<rect x='{track_x}' y='{y}' width='{track_w}' height='14' rx='7' fill='#0F172A' stroke='#1E293B' stroke-width='1'/>")
+        # Filled bar
+        svg_parts.append(f"<rect x='{track_x}' y='{y}' width='{bar_w}' height='14' rx='7' fill='{color}'/>")
+        # Score label
+        svg_parts.append(f"<text x='{track_x + track_w + 12}' y='{y + 11}' class='dim-score' fill='{color}'>{score}/100</text>")
+
+    svg_parts.append("</svg></div>")
+    return "".join(svg_parts)
+
+
